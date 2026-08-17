@@ -63,6 +63,7 @@ export function getAssistantTexts(harness: Harness): string[] {
 }
 
 export interface HarnessOptions {
+	bonsaiChildExecutionDeadlineMs?: number;
 	models?: FauxModelDefinition[];
 	settings?: Partial<Settings>;
 	systemPrompt?: string;
@@ -201,6 +202,7 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
 	spawnRuntime = {
 		parent: session,
 		getPreResponseContext: bonsai.getPreResponseContext,
+		childExecutionDeadlineMs: options.bonsaiChildExecutionDeadlineMs,
 		services: {
 			cwd: tempDir,
 			agentDir: tempDir,

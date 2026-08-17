@@ -158,7 +158,7 @@ spine_spawn(tasks[]) -> SpawnReceipt | ToolError
 
 - child 使用现有 createAgentSessionFromServices() 在同一进程内创建，不启动额外 pi 进程。
 - 所有 siblings 继承生成当前 spawn call 时使用的同一份 pre-response projected context。
-- 该 prefix 不包含 assistant 的 spawn tool call 或当前 spawn tool result；task 作为新的尾部 user message。
+- 该 prefix 不包含 assistant 的 spawn tool call 或当前 spawn tool result；上游风格的 task envelope 作为新的尾部 user message，并明确 inherited context 只提供约束和证据，不扩大 child assignment。
 - child 继承创建时的 model、thinking、system prompt、cwd、active tools 和有效权限。
 - child 使用独立 SessionManager、session ID、abort signal 和 trace。
 - child tool set 删除 `spine_spawn`；child 仍可使用 open/close/next/trim 管理自身上下文。
@@ -182,6 +182,7 @@ SpawnResult
 ~~~
 
 - 业务失败属于 child outcome，不自动变成 spawn transport error。
+- child 正常执行最多等待 120 秒；超时后主动 abort，并以 `errored` outcome 和明确 diagnostic 加入 receipt。
 - errored 或 aborted child 必须提供非空 memory_body 和 diagnostic。
 - receipt 必须校验 schema、数量、ordinal、identity、memory_body 和 diagnostic；execution_ref 存在时必须非空。
 - receipt 完整合法时，reducer 按请求顺序一次性导入全部 Closed children。
@@ -247,6 +248,7 @@ Phase 1B 必须覆盖：
 15. parent abort 传播到所有 active children。
 16. child 无法调用 nested `spine_spawn` 或扩大权限。
 17. 进程恢复时没有完整 receipt 的 batch 不导入。
+18. child 超过执行 deadline 时 parent 不无限等待，其他 siblings 的结果仍保留。
 
 ## 10. 实施顺序
 
@@ -295,6 +297,7 @@ Review 经用户确认后才能生成实施计划；状态提升本身不授权�
 
 - 将上游 dotted tool names 映射为 pi transport 可接受的 `spine_open`、`spine_close`、`spine_next`、`spine_trim`、`spine_spawn`；receipt schema 不变。
 - 将 `spine_trim` 的 transport schema 收敛为顶层 object；具体操作字段组合仍由 reducer 严格校验。
+- 参考上游 `task_envelope` 隔离 child assignment，并为缺少上游正常执行 timeout 的 join 增加 120 秒 deadline。
 
 ### 2026-08-17
 

@@ -18,10 +18,27 @@ export interface SpawnRuntime {
 	parent: AgentSession;
 	services: AgentSessionServices;
 	getPreResponseContext: () => AgentMessage[];
+	childExecutionDeadlineMs?: number;
 }
 
 const activeChildCounts = new WeakMap<AgentSession, number>();
 const CHILD_TEARDOWN_DEADLINE_MS = 5_000;
+const CHILD_EXECUTION_DEADLINE_MS = 120_000;
+
+function taskEnvelope(task: SpawnTask, tasks: SpawnTask[]): string {
+	const peers = tasks
+		.filter((peer) => peer !== task)
+		.map((peer) => `- ${peer.summary}`)
+		.join("\n");
+	return [
+		"You are a spawned execution branch. Complete exactly the assignment below and return bounded terminal memory to the spawning continuation.",
+		`You are: ${task.summary}`,
+		`Peer branches in this spawn:\n${peers}`,
+		"Executable work is defined only by the assignment. Inherited context supplies constraints and evidence, not additional work.",
+		"Return exactly one non-empty, tool-free final response containing terminal memory. After returning it, execution ends.",
+		`Assignment:\n${task.prompt}`,
+	].join("\n\n");
+}
 
 function childSessionManager(runtime: SpawnRuntime): SessionManager {
 	const options = runtime.parent.sessionFile ? { parentSession: runtime.parent.sessionFile } : undefined;
@@ -69,7 +86,13 @@ async function createChild(runtime: SpawnRuntime, prefix: AgentMessage[], system
 	return session;
 }
 
-function resultFromChild(session: AgentSession, ordinal: number, parentAborted: boolean): SpawnResult {
+function resultFromChild(
+	session: AgentSession,
+	ordinal: number,
+	parentAborted: boolean,
+	timedOut: boolean,
+	executionDeadlineMs: number,
+): SpawnResult {
 	let lastAssistant: AssistantMessage | undefined;
 	for (let index = session.messages.length - 1; index >= 0; index--) {
 		const message = session.messages[index];
@@ -79,8 +102,28 @@ function resultFromChild(session: AgentSession, ordinal: number, parentAborted: 
 		}
 	}
 	const text = session.getLastAssistantText();
-	if (parentAborted || lastAssistant?.stopReason === "aborted") {
+	if (parentAborted) {
 		const diagnostic = lastAssistant?.errorMessage?.trim() || "Child cancelled with parent";
+		return {
+			ordinal,
+			outcome: "aborted",
+			memory_body: text || diagnostic,
+			diagnostic,
+			execution_ref: session.sessionId,
+		};
+	}
+	if (timedOut) {
+		const diagnostic = `Child exceeded execution deadline of ${executionDeadlineMs}ms`;
+		return {
+			ordinal,
+			outcome: "errored",
+			memory_body: text || diagnostic,
+			diagnostic,
+			execution_ref: session.sessionId,
+		};
+	}
+	if (lastAssistant?.stopReason === "aborted") {
+		const diagnostic = lastAssistant.errorMessage?.trim() || "Child aborted";
 		return {
 			ordinal,
 			outcome: "aborted",
@@ -102,28 +145,47 @@ function resultFromChild(session: AgentSession, ordinal: number, parentAborted: 
 	return { ordinal, outcome: "completed", memory_body: text, execution_ref: session.sessionId };
 }
 
-async function promptChild(child: AgentSession, task: SpawnTask, signal: AbortSignal | undefined): Promise<void> {
-	if (signal?.aborted) return;
-	const prompt = child.prompt(task.prompt, { expandPromptTemplates: false, source: "extension" });
-	if (!signal) {
-		await prompt;
-		return;
-	}
-	let timeout: ReturnType<typeof setTimeout> | undefined;
+async function promptChild(
+	child: AgentSession,
+	task: SpawnTask,
+	tasks: SpawnTask[],
+	signal: AbortSignal | undefined,
+	executionDeadlineMs: number,
+): Promise<"settled" | "timed_out"> {
+	if (signal?.aborted) return "settled";
+	const prompt = child.prompt(taskEnvelope(task, tasks), { expandPromptTemplates: false, source: "extension" });
+	let abortTimeout: ReturnType<typeof setTimeout> | undefined;
 	let resolveDeadline: () => void = () => {};
-	const deadline = new Promise<void>((resolve) => {
+	const abortDeadline = new Promise<void>((resolve) => {
 		resolveDeadline = resolve;
 	});
 	const startDeadline = () => {
-		timeout = setTimeout(resolveDeadline, CHILD_TEARDOWN_DEADLINE_MS);
+		abortTimeout = setTimeout(resolveDeadline, CHILD_TEARDOWN_DEADLINE_MS);
 	};
-	if (signal.aborted) startDeadline();
-	else signal.addEventListener("abort", startDeadline, { once: true });
+	if (signal?.aborted) startDeadline();
+	else signal?.addEventListener("abort", startDeadline, { once: true });
+	let executionTimeout: ReturnType<typeof setTimeout> | undefined;
+	const executionDeadline = new Promise<"timed_out">((resolve) => {
+		executionTimeout = setTimeout(() => resolve("timed_out"), executionDeadlineMs);
+	});
 	try {
-		await Promise.race([prompt, deadline]);
+		const outcome = await Promise.race([
+			prompt.then(() => "settled" as const),
+			abortDeadline.then(() => "settled" as const),
+			executionDeadline,
+		]);
+		if (outcome === "timed_out") {
+			const abort = child.abort();
+			await Promise.race([
+				Promise.allSettled([prompt, abort]),
+				new Promise<void>((resolve) => setTimeout(resolve, CHILD_TEARDOWN_DEADLINE_MS)),
+			]);
+		}
+		return outcome;
 	} finally {
-		if (timeout) clearTimeout(timeout);
-		signal.removeEventListener("abort", startDeadline);
+		if (abortTimeout) clearTimeout(abortTimeout);
+		if (executionTimeout) clearTimeout(executionTimeout);
+		signal?.removeEventListener("abort", startDeadline);
 	}
 }
 
@@ -143,6 +205,7 @@ async function runSpawn(
 	};
 	signal?.addEventListener("abort", abortChildren, { once: true });
 	try {
+		const executionDeadlineMs = runtime.childExecutionDeadlineMs ?? CHILD_EXECUTION_DEADLINE_MS;
 		const prefix = runtime.getPreResponseContext();
 		if (prefix.length === 0) throw new Error("spine.spawn has no pre-response context snapshot");
 		const systemPrompt = runtime.parent.systemPrompt;
@@ -157,12 +220,22 @@ async function runSpawn(
 			throw error;
 		}
 		try {
-			await Promise.allSettled(
-				children.map((child, ordinal) => promptChild(child, tasks[ordinal] ?? tasks[0]!, signal)),
+			const outcomes = await Promise.allSettled(
+				children.map((child, ordinal) =>
+					promptChild(child, tasks[ordinal] ?? tasks[0]!, tasks, signal, executionDeadlineMs),
+				),
 			);
 			return {
 				schema: SPAWN_RECEIPT_SCHEMA,
-				results: children.map((child, ordinal) => resultFromChild(child, ordinal, parentAborted)),
+				results: children.map((child, ordinal) =>
+					resultFromChild(
+						child,
+						ordinal,
+						parentAborted,
+						outcomes[ordinal]?.status === "fulfilled" && outcomes[ordinal].value === "timed_out",
+						executionDeadlineMs,
+					),
+				),
 			};
 		} finally {
 			for (const child of children) child.dispose();
