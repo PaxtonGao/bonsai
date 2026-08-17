@@ -294,6 +294,7 @@ Review 经用户确认后才能生成实施计划；状态提升本身不授权�
 ### 2026-08-18
 
 - 将上游 dotted tool names 映射为 pi transport 可接受的 `spine_open`、`spine_close`、`spine_next`、`spine_trim`、`spine_spawn`；receipt schema 不变。
+- 将 `spine_trim` 的 transport schema 收敛为顶层 object；具体操作字段组合仍由 reducer 严格校验。
 
 ### 2026-08-17
 

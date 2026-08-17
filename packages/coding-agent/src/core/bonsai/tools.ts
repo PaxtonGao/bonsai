@@ -82,30 +82,18 @@ export function createSpineJitTools(): ToolDefinition[] {
 		label: "Trim result",
 		description: "Trim the oversized result from the immediately previous completed tool group.",
 		promptSnippet: "Trim an oversized adjacent tool result by its TRIM_ID.",
-		parameters: Type.Union([
-			Type.Object(
-				{ TRIM_ID: Type.String({ minLength: 1 }), op: Type.Literal("snip") },
-				{ additionalProperties: false },
-			),
-			Type.Object(
-				{ TRIM_ID: Type.String({ minLength: 1 }), op: Type.Literal("slice"), head: Type.Integer({ minimum: 0 }) },
-				{ additionalProperties: false },
-			),
-			Type.Object(
-				{ TRIM_ID: Type.String({ minLength: 1 }), op: Type.Literal("slice"), tail: Type.Integer({ minimum: 0 }) },
-				{ additionalProperties: false },
-			),
-			Type.Object(
-				{
-					TRIM_ID: Type.String({ minLength: 1 }),
-					op: Type.Literal("slice"),
-					anchor: Type.String({ minLength: 1 }),
-					preceding: Type.Integer({ minimum: 0 }),
-					following: Type.Integer({ minimum: 0 }),
-				},
-				{ additionalProperties: false },
-			),
-		]),
+		parameters: Type.Object(
+			{
+				TRIM_ID: Type.String({ minLength: 1 }),
+				op: Type.String({ enum: ["snip", "slice"] }),
+				head: Type.Optional(Type.Integer({ minimum: 0 })),
+				tail: Type.Optional(Type.Integer({ minimum: 0 })),
+				anchor: Type.Optional(Type.String({ minLength: 1 })),
+				preceding: Type.Optional(Type.Integer({ minimum: 0 })),
+				following: Type.Optional(Type.Integer({ minimum: 0 })),
+			},
+			{ additionalProperties: false },
+		),
 		executionMode: "sequential",
 		execute: async (toolCallId, params, _signal, _onUpdate, ctx) => {
 			validateTrimRequest(ctx.sessionManager.getBranch(), toolCallId, params);

@@ -523,7 +523,7 @@ export function deriveTrimProjection(events: SpineEvent[]): TrimEdit[] {
 		active = [];
 		if (event.group.calls.some((call) => call.outcome === "unknown")) continue;
 		for (const call of event.group.calls) {
-			if (call.name.startsWith("spine.") || call.outputBoundary === undefined || call.output === undefined) continue;
+			if (call.name.startsWith("spine_") || call.outputBoundary === undefined || call.output === undefined) continue;
 			if (new TextEncoder().encode(call.output).byteLength <= TRIM_THRESHOLD_BYTES) continue;
 			const edit: TrimEdit = {
 				boundary: call.outputBoundary,
@@ -558,7 +558,7 @@ export function validateTrimRequest(entries: SessionEntry[], toolCallId: string,
 	const activeBoundaries = new Set(
 		previousGroup?.calls.every((call) => call.outcome !== "unknown")
 			? previousGroup.calls.flatMap((call) =>
-					!call.name.startsWith("spine.") && call.outputBoundary !== undefined ? [call.outputBoundary] : [],
+					!call.name.startsWith("spine_") && call.outputBoundary !== undefined ? [call.outputBoundary] : [],
 				)
 			: [],
 	);
