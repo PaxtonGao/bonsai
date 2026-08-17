@@ -62,6 +62,8 @@ export interface CreateAgentSessionFromServicesOptions {
 	excludeTools?: CreateAgentSessionOptions["excludeTools"];
 	noTools?: CreateAgentSessionOptions["noTools"];
 	customTools?: ToolDefinition[];
+	/** Fixed effective prompt inherited by an in-process child session. */
+	fixedSystemPrompt?: string;
 }
 
 /**
@@ -202,20 +204,23 @@ export async function createAgentSessionServices(
 export async function createAgentSessionFromServices(
 	options: CreateAgentSessionFromServicesOptions,
 ): Promise<CreateAgentSessionResult> {
-	return createAgentSession({
-		cwd: options.services.cwd,
-		agentDir: options.services.agentDir,
-		modelRuntime: options.services.modelRuntime,
-		settingsManager: options.services.settingsManager,
-		resourceLoader: options.services.resourceLoader,
-		sessionManager: options.sessionManager,
-		model: options.model,
-		thinkingLevel: options.thinkingLevel,
-		scopedModels: options.scopedModels,
-		tools: options.tools,
-		excludeTools: options.excludeTools,
-		noTools: options.noTools,
-		customTools: options.customTools,
-		sessionStartEvent: options.sessionStartEvent,
-	});
+	return createAgentSession(
+		{
+			cwd: options.services.cwd,
+			agentDir: options.services.agentDir,
+			modelRuntime: options.services.modelRuntime,
+			settingsManager: options.services.settingsManager,
+			resourceLoader: options.services.resourceLoader,
+			sessionManager: options.sessionManager,
+			model: options.model,
+			thinkingLevel: options.thinkingLevel,
+			scopedModels: options.scopedModels,
+			tools: options.tools,
+			excludeTools: options.excludeTools,
+			noTools: options.noTools,
+			customTools: options.customTools,
+			sessionStartEvent: options.sessionStartEvent,
+		},
+		{ fixedSystemPrompt: options.fixedSystemPrompt },
+	);
 }

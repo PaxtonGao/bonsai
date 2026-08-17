@@ -17,6 +17,8 @@ import type {
 import { registerFauxProvider, streamSimple } from "@earendil-works/pi-ai/compat";
 import { AgentSession, type AgentSessionEvent } from "../../src/core/agent-session.ts";
 import { AuthStorage } from "../../src/core/auth-storage.ts";
+import { createBonsaiIntegration } from "../../src/core/bonsai/integration.ts";
+import type { SpawnRuntime } from "../../src/core/bonsai/spawn.ts";
 import type { ExtensionRunner } from "../../src/core/extensions/index.ts";
 import { convertToLlm } from "../../src/core/messages.ts";
 import { SessionManager } from "../../src/core/session-manager.ts";
@@ -110,6 +112,8 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
 	const extensionRunnerRef: { current?: ExtensionRunner } = {};
 
 	const sessionManager = SessionManager.inMemory();
+	let spawnRuntime: SpawnRuntime | undefined;
+	const bonsai = createBonsaiIntegration(sessionManager, () => spawnRuntime);
 	const settingsManager = SettingsManager.inMemory(options.settings);
 
 	const authStorage = AuthStorage.inMemory();
@@ -168,9 +172,10 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
 			});
 		},
 		transformContext: async (messages: AgentMessage[]) => {
+			const projected = bonsai.project(messages);
 			const runner = extensionRunnerRef.current;
-			if (!runner) return messages;
-			return runner.emitContext(messages);
+			const transformed = runner ? await runner.emitContext(projected) : projected;
+			return bonsai.capture(transformed);
 		},
 	});
 	const extensionsResult = options.extensionFactories
@@ -186,12 +191,25 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
 		cwd: tempDir,
 		modelRuntime: getModelRuntime(modelRegistry),
 		resourceLoader,
+		customTools: bonsai.tools,
 		baseToolsOverride: toolMap,
 		initialActiveToolNames: options.initialActiveToolNames,
 		allowedToolNames: options.allowedToolNames,
 		excludedToolNames: options.excludedToolNames,
 		extensionRunnerRef,
 	});
+	spawnRuntime = {
+		parent: session,
+		getPreResponseContext: bonsai.getPreResponseContext,
+		services: {
+			cwd: tempDir,
+			agentDir: tempDir,
+			modelRuntime: getModelRuntime(modelRegistry),
+			settingsManager,
+			resourceLoader,
+			diagnostics: [],
+		},
+	};
 
 	const events: AgentSessionEvent[] = [];
 	session.subscribe((event) => {
