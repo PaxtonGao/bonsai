@@ -1,5 +1,6 @@
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
+import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import type { AgentSession } from "../agent-session.ts";
 import {
@@ -81,7 +82,7 @@ async function createChild(runtime: SpawnRuntime, prefix: AgentMessage[], system
 	session.agent.state.messages = prefix.slice();
 	session.agent.transformContext = async (messages) => {
 		const entries = sessionManager.getBranch();
-		return [...prefix, ...projectSpine(entries, reduceSpine(entries), messages.slice(prefix.length))];
+		return [...prefix, ...projectSpine(entries, reduceSpine(entries), messages)];
 	};
 	return session;
 }
@@ -279,6 +280,22 @@ export function createSpineSpawnTool(getRuntime: () => SpawnRuntime | undefined)
 			if (!runtime) throw new Error("spine.spawn runtime is not bound");
 			const receipt = await runSpawn(runtime, tasks, signal);
 			return { content: [{ type: "text", text: JSON.stringify(receipt) }], details: receipt };
+		},
+		renderResult: (result, _options, theme, context) => {
+			const receipt = result.details as SpawnReceipt | undefined;
+			if (!receipt) {
+				const content = result.content[0];
+				return new Text(content?.type === "text" ? content.text : "", 0, 0);
+			}
+			const tasks = (context.args as { tasks: SpawnTask[] }).tasks;
+			const lines = [theme.fg("toolTitle", theme.bold(`Spawn finished (${receipt.results.length} branches)`))];
+			for (const branch of receipt.results) {
+				const color =
+					branch.outcome === "completed" ? "success" : branch.outcome === "errored" ? "error" : "warning";
+				const summary = tasks[branch.ordinal]?.summary ?? `branch ${branch.ordinal + 1}`;
+				lines.push(theme.fg(color, `[${branch.outcome}] ${branch.ordinal + 1}. ${summary}`));
+			}
+			return new Text(lines.join("\n"), 0, 0);
 		},
 	});
 }

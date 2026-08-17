@@ -1,8 +1,8 @@
 # Bonsai Phase 1 SDD
 
-> 状态：Implemented，等待 feature branch 人工验收
+> 状态：Implemented，人工 smoke test 通过，已获 main 合并授权
 >
-> 实施授权：已获 Phase 1 开发与 feature branch 推送授权；未获 main 合并或部署授权。
+> 实施授权：已获 Phase 1 开发、feature branch 推送与 main 合并授权；未获部署授权。
 >
 > 证据基线：实现基线 pi 096b022b15c0dd40734393eaccd06505d84a745f；兼容性基线 pi 87205484bf749c2140fef5d1bea68995d57e739c；SpineCodex 15cfe2d8b00a0338602533ff2c338a16652a06af。
 >
@@ -286,10 +286,10 @@ Review 经用户确认后才能生成实施计划；状态提升本身不授权�
 ### 12.1 实施与验证结果
 
 - Phase 1 已按第 4 节模块边界实现在 packages/coding-agent/src/core/bonsai/，并接入 coding-agent SDK。
-- 当前实现基线的 3 个目标测试文件共 17 项通过；npm run check 通过。
-- 同一 Bonsai diff 在 pi 87205484b 上的 17 项目标测试通过，未发现 API 或行为级破坏。
-- 新 main 临时 worktree 的全仓 check 因 models.dev 连续 ECONNRESET 无法刷新 gitignored provider catalog；其余检查阶段及 Bonsai 目标测试通过。
-- Phase 1 将在 `Exploration-of-Recursive-Working` 合并当前 origin/main 后接受人工验收；通过前不合入 main。
+- 当前实现基线的 3 个目标测试文件共 20 项通过，并已完成人工 SpineJIT/SpineSpawn smoke test。
+- 同一 Bonsai diff 已合并 pi 87205484b，未发现 API 或行为级破坏。
+- 全仓 check 的格式、依赖、import、shrinkwrap 和 install-lock 阶段通过；TypeScript 阶段仍受 gitignored provider catalog 中 xAI/ZAI 元数据不一致阻塞，未出现 Bonsai 错误。
+- `Exploration-of-Recursive-Working` 已获合入 main 授权；部署仍需单独授权。
 
 ## 13. 变更记录
 
