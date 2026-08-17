@@ -22,6 +22,7 @@ describe("Bonsai SpineJIT integration", () => {
 			expect.arrayContaining(["spine_open", "spine_close", "spine_next", "spine_trim", "spine_spawn"]),
 		);
 		expect(toolNames.every((name) => /^[a-zA-Z0-9_-]+$/.test(name))).toBe(true);
+		expect(harness.session.getToolDefinition("spine_trim")?.parameters).toMatchObject({ type: "object" });
 	});
 
 	it("projects a closed child to user evidence and node memory before the next provider request", async () => {
