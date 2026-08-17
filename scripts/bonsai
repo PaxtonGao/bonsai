@@ -9,5 +9,10 @@ while [[ -L "$SOURCE" ]]; do
 done
 SCRIPT_DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+ASK_USER_EXTENSION="$REPO_ROOT/.pi/npm/node_modules/@juicesharp/rpiv-ask-user-question/index.ts"
+IDENTITY_PROMPT="$REPO_ROOT/.pi/BONSAI_SYSTEM.md"
 
-exec "$REPO_ROOT/pi-test.sh" "$@"
+exec "$REPO_ROOT/pi-test.sh" \
+	--extension "$ASK_USER_EXTENSION" \
+	--append-system-prompt "$IDENTITY_PROMPT" \
+	"$@"
