@@ -68,7 +68,7 @@ export default function reapplyMarkers(pi) {
 			prefixes.push(texts.slice(0, -1));
 			childTools.push(context.tools?.map((tool) => tool.name) ?? []);
 			childSystemPrompts.push(context.systemPrompt);
-			return texts.at(-1)?.includes("beta")
+			return texts.at(-1)?.includes("You are: beta")
 				? fauxAssistantMessage("", { stopReason: "error", errorMessage: "beta failed" })
 				: fauxAssistantMessage(`memory:${texts.at(-1)}`);
 		};
@@ -110,6 +110,8 @@ export default function reapplyMarkers(pi) {
 		expect(receipt.schema).toBe("spine.spawn.result.v1");
 		expect(receipt.results.map((entry) => entry.ordinal)).toEqual([0, 1]);
 		expect(receipt.results[0]?.memory_body).toContain("inspect alpha");
+		expect(receipt.results[0]?.memory_body).toContain("You are: alpha");
+		expect(receipt.results[0]?.memory_body).not.toContain("Assignment:\ninspect beta");
 		expect(receipt.results[1]).toMatchObject({ outcome: "errored", diagnostic: "beta failed" });
 		expect(new Set(receipt.results.map((entry) => entry.execution_ref)).size).toBe(2);
 		expect(prefixes).toHaveLength(2);
@@ -173,6 +175,69 @@ export default function reapplyMarkers(pi) {
 
 		expect(childSignals).toHaveLength(2);
 		expect(childSignals.every((signal) => signal.aborted)).toBe(true);
+	});
+
+	it("returns an errored receipt when a child exceeds its execution deadline", async () => {
+		let resolveStarted: (() => void) | undefined;
+		const waitStarted = new Promise<void>((resolve) => {
+			resolveStarted = resolve;
+		});
+		const waitTool: AgentTool = {
+			name: "wait-child",
+			label: "Wait child",
+			description: "Block until cancelled",
+			parameters: Type.Object({}),
+			execute: async (_toolCallId, _params, signal) => {
+				if (!signal) throw new Error("Missing child abort signal");
+				resolveStarted?.();
+				await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));
+				return { content: [{ type: "text", text: "cancelled" }], details: {} };
+			},
+		};
+		const harness = await createHarness({ bonsaiChildExecutionDeadlineMs: 100, tools: [waitTool] });
+		harnesses.push(harness);
+		harness.setResponses([
+			fauxAssistantMessage(
+				fauxToolCall(
+					"spine_spawn",
+					{
+						tasks: [
+							{ summary: "one", prompt: "wait one" },
+							{ summary: "two", prompt: "wait two" },
+						],
+					},
+					{ id: "spawn-timeout" },
+				),
+				{ stopReason: "toolUse" },
+			),
+			fauxAssistantMessage("first child complete"),
+			fauxAssistantMessage(fauxToolCall("wait-child", {}, { id: "wait-two" }), { stopReason: "toolUse" }),
+			fauxAssistantMessage("parent resumed"),
+		]);
+
+		const prompt = harness.session.prompt("start deadline children");
+		await waitStarted;
+		const outcome = await Promise.race([
+			prompt.then(() => "completed" as const),
+			new Promise<"stuck">((resolve) => setTimeout(() => resolve("stuck"), 500)),
+		]);
+		if (outcome === "stuck") {
+			await harness.session.abort();
+			await prompt;
+		}
+		expect(outcome).toBe("completed");
+
+		const result = harness.session.messages.find(
+			(message) => message.role === "toolResult" && message.toolCallId === "spawn-timeout",
+		);
+		if (result?.role !== "toolResult") throw new Error("Missing timed out spine.spawn result");
+		const receipt = JSON.parse(getMessageText(result)) as {
+			results: Array<{ outcome: string; diagnostic?: string }>;
+		};
+		expect(receipt.results).toHaveLength(2);
+		expect(receipt.results[0]?.outcome).toBe("completed");
+		expect(receipt.results[1]).toMatchObject({ outcome: "errored" });
+		expect(receipt.results[1]?.diagnostic).toContain("execution deadline");
 	});
 
 	it("rejects an oversized batch before starting any child", async () => {
