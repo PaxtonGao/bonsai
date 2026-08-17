@@ -226,6 +226,8 @@ export interface AgentSessionConfig {
 	extensionRunnerRef?: { current?: ExtensionRunner };
 	/** Session start event metadata emitted when extensions bind to this runtime. */
 	sessionStartEvent?: SessionStartEvent;
+	/** Fixed prompt inherited by an in-process child session. */
+	fixedSystemPrompt?: string;
 }
 
 export interface ExtensionBindings {
@@ -374,6 +376,7 @@ export class AgentSession {
 	private _baseSystemPrompt = "";
 	private _baseSystemPromptOptions!: BuildSystemPromptOptions;
 	private _systemPromptOverride?: string;
+	private _fixedSystemPrompt?: string;
 
 	constructor(config: AgentSessionConfig) {
 		this.agent = config.agent;
@@ -390,6 +393,7 @@ export class AgentSession {
 		this._excludedToolNames = config.excludedToolNames ? new Set(config.excludedToolNames) : undefined;
 		this._baseToolsOverride = config.baseToolsOverride;
 		this._sessionStartEvent = config.sessionStartEvent ?? { type: "session_start", reason: "startup" };
+		this._fixedSystemPrompt = config.fixedSystemPrompt;
 
 		// Always subscribe to agent events for internal handling
 		// (session persistence, extensions, auto-compaction, retry logic)
@@ -1237,12 +1241,14 @@ export class AgentSession {
 			this._pendingNextTurnMessages = [];
 
 			// Emit before_agent_start extension event
-			const result = await this._extensionRunner.emitBeforeAgentStart(
-				expandedText,
-				currentImages,
-				this._baseSystemPrompt,
-				this._baseSystemPromptOptions,
-			);
+			const result = this._fixedSystemPrompt
+				? undefined
+				: await this._extensionRunner.emitBeforeAgentStart(
+						expandedText,
+						currentImages,
+						this._baseSystemPrompt,
+						this._baseSystemPromptOptions,
+					);
 			// Add all custom messages from extensions
 			if (result?.messages) {
 				for (const msg of result.messages) {
@@ -1258,7 +1264,10 @@ export class AgentSession {
 				}
 			}
 			// Apply extension-modified system prompt, or reset to base
-			if (result?.systemPrompt !== undefined) {
+			if (this._fixedSystemPrompt) {
+				this._systemPromptOverride = this._fixedSystemPrompt;
+				this.agent.state.systemPrompt = this._fixedSystemPrompt;
+			} else if (result?.systemPrompt !== undefined) {
 				this._systemPromptOverride = result.systemPrompt;
 				this.agent.state.systemPrompt = result.systemPrompt;
 			} else {

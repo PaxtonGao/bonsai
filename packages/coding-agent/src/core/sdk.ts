@@ -5,6 +5,8 @@ import { getAgentDir } from "../config.ts";
 import { resolvePath } from "../utils/paths.ts";
 import { AgentSession } from "./agent-session.ts";
 import { formatNoModelsAvailableMessage } from "./auth-guidance.ts";
+import { createBonsaiIntegration } from "./bonsai/integration.ts";
+import type { SpawnRuntime } from "./bonsai/spawn.ts";
 import { DEFAULT_THINKING_LEVEL } from "./defaults.ts";
 import type { ExtensionRunner, LoadExtensionsResult, SessionStartEvent, ToolDefinition } from "./extensions/index.ts";
 import { convertToLlm } from "./messages.ts";
@@ -168,7 +170,10 @@ function getDefaultAgentDir(): string {
  * });
  * ```
  */
-export async function createAgentSession(options: CreateAgentSessionOptions = {}): Promise<CreateAgentSessionResult> {
+export async function createAgentSession(
+	options: CreateAgentSessionOptions = {},
+	internal: { fixedSystemPrompt?: string } = {},
+): Promise<CreateAgentSessionResult> {
 	const cwd = resolvePath(options.cwd ?? options.sessionManager?.getCwd() ?? process.cwd());
 	const agentDir = options.agentDir ? resolvePath(options.agentDir) : getDefaultAgentDir();
 	let resourceLoader = options.resourceLoader;
@@ -293,6 +298,8 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	};
 
 	const extensionRunnerRef: { current?: ExtensionRunner } = {};
+	let spawnRuntime: SpawnRuntime | undefined;
+	const bonsai = createBonsaiIntegration(sessionManager, () => spawnRuntime);
 
 	agent = new Agent({
 		initialState: {
@@ -351,9 +358,10 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		},
 		sessionId: sessionManager.getSessionId(),
 		transformContext: async (messages) => {
+			const projected = bonsai.project(messages);
 			const runner = extensionRunnerRef.current;
-			if (!runner) return messages;
-			return runner.emitContext(messages);
+			const transformed = runner ? await runner.emitContext(projected) : projected;
+			return bonsai.capture(transformed);
 		},
 		steeringMode: settingsManager.getSteeringMode(),
 		followUpMode: settingsManager.getFollowUpMode(),
@@ -383,14 +391,20 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		cwd,
 		scopedModels: options.scopedModels,
 		resourceLoader,
-		customTools: options.customTools,
+		customTools: [...(options.customTools ?? []), ...bonsai.tools],
 		modelRuntime,
 		initialActiveToolNames,
 		allowedToolNames,
 		excludedToolNames,
 		extensionRunnerRef,
 		sessionStartEvent: options.sessionStartEvent,
+		fixedSystemPrompt: internal.fixedSystemPrompt,
 	});
+	spawnRuntime = {
+		parent: session,
+		services: { cwd, agentDir, modelRuntime, settingsManager, resourceLoader, diagnostics: [] },
+		getPreResponseContext: bonsai.getPreResponseContext,
+	};
 	const extensionsResult = resourceLoader.getExtensions();
 
 	return {
