@@ -7,7 +7,7 @@ import { SessionManager } from "../../src/core/session-manager.ts";
 
 function appendControl(
 	session: SessionManager,
-	name: "spine.open" | "spine.close" | "spine.next",
+	name: "spine_open" | "spine_close" | "spine_next",
 	input: Record<string, string>,
 	callId: string,
 ): void {
@@ -33,10 +33,10 @@ describe("Bonsai Spine reducer", () => {
 	it("closes a child deterministically and projects only user evidence plus node memory", () => {
 		const session = SessionManager.inMemory();
 		session.appendMessage({ role: "user", content: "root request", timestamp: 1 });
-		appendControl(session, "spine.open", { goal: "inspect subsystem" }, "open-1");
+		appendControl(session, "spine_open", { goal: "inspect subsystem" }, "open-1");
 		session.appendMessage({ role: "user", content: "child evidence", timestamp: 2 });
 		session.appendMessage(fauxAssistantMessage("private working detail"));
-		appendControl(session, "spine.close", { memory: "inspection complete" }, "close-1");
+		appendControl(session, "spine_close", { memory: "inspection complete" }, "close-1");
 
 		const entries = session.getBranch();
 		const first = reduceSpine(entries);
@@ -63,7 +63,7 @@ describe("Bonsai Spine reducer", () => {
 		session.appendMessage(fauxAssistantMessage("old answer"));
 		const firstKeptEntryId = session.appendMessage({ role: "user", content: "kept request", timestamp: 2 });
 		session.appendCompaction("compact baseline", firstKeptEntryId, 100);
-		appendControl(session, "spine.open", { goal: "post-compact task" }, "open-2");
+		appendControl(session, "spine_open", { goal: "post-compact task" }, "open-2");
 
 		const entries = session.getBranch();
 		const snapshot = reduceSpine(entries);
@@ -86,7 +86,7 @@ describe("Bonsai Spine reducer", () => {
 			{ summary: "beta", prompt: "inspect beta" },
 		];
 		session.appendMessage(
-			fauxAssistantMessage(fauxToolCall("spine.spawn", { tasks }, { id: "spawn-1" }), { stopReason: "toolUse" }),
+			fauxAssistantMessage(fauxToolCall("spine_spawn", { tasks }, { id: "spawn-1" }), { stopReason: "toolUse" }),
 		);
 		const receipt = {
 			schema: "spine.spawn.result.v1",
@@ -98,7 +98,7 @@ describe("Bonsai Spine reducer", () => {
 		session.appendMessage({
 			role: "toolResult",
 			toolCallId: "spawn-1",
-			toolName: "spine.spawn",
+			toolName: "spine_spawn",
 			content: [{ type: "text", text: JSON.stringify(receipt) }],
 			isError: false,
 			timestamp: 2,
@@ -120,14 +120,14 @@ describe("Bonsai Spine reducer", () => {
 			{ summary: "beta", prompt: "inspect beta" },
 		];
 		session.appendMessage(
-			fauxAssistantMessage(fauxToolCall("spine.spawn", { tasks }, { id: "spawn-bad" }), {
+			fauxAssistantMessage(fauxToolCall("spine_spawn", { tasks }, { id: "spawn-bad" }), {
 				stopReason: "toolUse",
 			}),
 		);
 		session.appendMessage({
 			role: "toolResult",
 			toolCallId: "spawn-bad",
-			toolName: "spine.spawn",
+			toolName: "spine_spawn",
 			content: [
 				{
 					type: "text",
@@ -154,14 +154,14 @@ describe("Bonsai Spine reducer", () => {
 		]) {
 			const session = SessionManager.inMemory();
 			session.appendMessage(
-				fauxAssistantMessage(fauxToolCall("spine.spawn", { tasks }, { id: "spawn-invalid-tasks" }), {
+				fauxAssistantMessage(fauxToolCall("spine_spawn", { tasks }, { id: "spawn-invalid-tasks" }), {
 					stopReason: "toolUse",
 				}),
 			);
 			session.appendMessage({
 				role: "toolResult",
 				toolCallId: "spawn-invalid-tasks",
-				toolName: "spine.spawn",
+				toolName: "spine_spawn",
 				content: [
 					{
 						type: "text",
@@ -180,10 +180,10 @@ describe("Bonsai Spine reducer", () => {
 	});
 
 	it("keeps mismatched or duplicate tool results as ordinary history", () => {
-		for (const toolNames of [["spine.close"], ["spine.open", "spine.open"]]) {
+		for (const toolNames of [["spine_close"], ["spine_open", "spine_open"]]) {
 			const session = SessionManager.inMemory();
 			session.appendMessage(
-				fauxAssistantMessage(fauxToolCall("spine.open", { goal: "must not open" }, { id: "invalid-pair" }), {
+				fauxAssistantMessage(fauxToolCall("spine_open", { goal: "must not open" }, { id: "invalid-pair" }), {
 					stopReason: "toolUse",
 				}),
 			);
@@ -223,14 +223,14 @@ describe("Bonsai Spine reducer", () => {
 			"previous completed toolcall",
 		);
 		session.appendMessage(
-			fauxAssistantMessage(fauxToolCall("spine.trim", { TRIM_ID: "trim_1", op: "snip" }, { id: "forged-trim" }), {
+			fauxAssistantMessage(fauxToolCall("spine_trim", { TRIM_ID: "trim_1", op: "snip" }, { id: "forged-trim" }), {
 				stopReason: "toolUse",
 			}),
 		);
 		session.appendMessage({
 			role: "toolResult",
 			toolCallId: "forged-trim",
-			toolName: "spine.trim",
+			toolName: "spine_trim",
 			content: [{ type: "text", text: "accepted" }],
 			isError: false,
 			timestamp: 3,
@@ -240,9 +240,9 @@ describe("Bonsai Spine reducer", () => {
 
 	it("closes the current task and enters its sibling atomically on next", () => {
 		const session = SessionManager.inMemory();
-		appendControl(session, "spine.open", { goal: "first" }, "open-next");
+		appendControl(session, "spine_open", { goal: "first" }, "open-next");
 		session.appendMessage({ role: "user", content: "first evidence", timestamp: 1 });
-		appendControl(session, "spine.next", { goal: "second", memory: "first done" }, "next-1");
+		appendControl(session, "spine_next", { goal: "second", memory: "first done" }, "next-1");
 
 		const snapshot = reduceSpine(session.getBranch());
 		expect(snapshot.cursor).toEqual([1, 2]);
@@ -256,7 +256,7 @@ describe("Bonsai Spine reducer", () => {
 	it("keeps an incomplete control group as ordinary history without changing the tree", () => {
 		const session = SessionManager.inMemory();
 		session.appendMessage(
-			fauxAssistantMessage(fauxToolCall("spine.open", { goal: "incomplete" }, { id: "open-incomplete" }), {
+			fauxAssistantMessage(fauxToolCall("spine_open", { goal: "incomplete" }, { id: "open-incomplete" }), {
 				stopReason: "toolUse",
 			}),
 		);
@@ -272,15 +272,15 @@ describe("Bonsai Spine reducer", () => {
 		session.appendMessage(
 			fauxAssistantMessage(
 				[
-					fauxToolCall("spine.open", { goal: "must not open" }, { id: "open-mixed" }),
-					fauxToolCall("spine.close", { memory: "must not close" }, { id: "close-mixed" }),
+					fauxToolCall("spine_open", { goal: "must not open" }, { id: "open-mixed" }),
+					fauxToolCall("spine_close", { memory: "must not close" }, { id: "close-mixed" }),
 				],
 				{ stopReason: "toolUse" },
 			),
 		);
 		for (const [toolCallId, toolName, isError] of [
-			["open-mixed", "spine.open", false],
-			["close-mixed", "spine.close", true],
+			["open-mixed", "spine_open", false],
+			["close-mixed", "spine_close", true],
 		] as const) {
 			session.appendMessage({
 				role: "toolResult",

@@ -72,17 +72,17 @@ reducer/projection   <- integration
 Phase 1A 注册以下工具并沿用上游参数语义：
 
 ~~~text
-spine.open(goal)
-spine.close(memory)
-spine.next(goal, memory)
-spine.trim(...)  // 参数 schema 与固定版本上游保持一致
+spine_open(goal)
+spine_close(memory)
+spine_next(goal, memory)
+spine_trim(...)  // 参数 schema 与固定版本上游保持一致
 ~~~
 
 - summary 和 memory trim 后必须非空。
 - handler admission 与 reducer replay 都必须校验 control。
 - 一次 assistant response 最多接受一个结构控制调用；非法组合返回 tool Error。
 - tool Error、缺失 tool result、重复 control 或 malformed payload 不改变 Task Tree。
-- spine.trim 只裁剪仍可由相邻合法 trim identity 定位的普通 tool result，不创建 node 或 Node Memory。
+- `spine_trim` 只裁剪仍可由相邻合法 trim identity 定位的普通 tool result，不创建 node 或 Node Memory。
 
 ### 5.2 Task Tree
 
@@ -145,7 +145,7 @@ Phase 1 不实现 Bonsai native compactor。pi 原生 compaction 继续作为 ro
 ### 6.1 Spawn control
 
 ~~~text
-spine.spawn(tasks[]) -> SpawnReceipt | ToolError
+spine_spawn(tasks[]) -> SpawnReceipt | ToolError
 ~~~
 
 - 一次 spawn 至少 2 个、最多 4 个 tasks；task prompt 必须非空，summary 不得重复。
@@ -161,7 +161,7 @@ spine.spawn(tasks[]) -> SpawnReceipt | ToolError
 - 该 prefix 不包含 assistant 的 spawn tool call 或当前 spawn tool result；task 作为新的尾部 user message。
 - child 继承创建时的 model、thinking、system prompt、cwd、active tools 和有效权限。
 - child 使用独立 SessionManager、session ID、abort signal 和 trace。
-- child tool set 删除 spine.spawn；child 仍可使用 open/close/next/trim 管理自身上下文。
+- child tool set 删除 `spine_spawn`；child 仍可使用 open/close/next/trim 管理自身上下文。
 - child 不得扩大 parent 权限或工具 allowlist。
 
 ### 6.3 Join 与 receipt
@@ -236,7 +236,7 @@ Phase 1A 必须覆盖：
 7. projection 保持 assistant/tool-result pairing。
 8. session branch replay 只使用当前 branch path。
 9. pi compaction replacement 创建新 epoch，旧 epoch 不进入当前 projection。
-10. spine.trim 只裁剪合法目标；stale/invalid trim identity 返回 Error。
+10. `spine_trim` 只裁剪合法目标；stale/invalid trim identity 返回 Error。
 
 Phase 1B 必须覆盖：
 
@@ -245,7 +245,7 @@ Phase 1B 必须覆盖：
 13. mixed child outcomes 形成完整 receipt，并按请求顺序原子导入。
 14. malformed receipt 导致整批 tree no-op。
 15. parent abort 传播到所有 active children。
-16. child 无法调用 nested spine.spawn 或扩大权限。
+16. child 无法调用 nested `spine_spawn` 或扩大权限。
 17. 进程恢复时没有完整 receipt 的 batch 不导入。
 
 ## 10. 实施顺序
@@ -290,6 +290,10 @@ Review 经用户确认后才能生成实施计划；状态提升本身不授权�
 - Phase 1 将在 `Exploration-of-Recursive-Working` 合并当前 origin/main 后接受人工验收；通过前不合入 main。
 
 ## 13. 变更记录
+
+### 2026-08-18
+
+- 将上游 dotted tool names 映射为 pi transport 可接受的 `spine_open`、`spine_close`、`spine_next`、`spine_trim`、`spine_spawn`；receipt schema 不变。
 
 ### 2026-08-17
 

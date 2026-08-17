@@ -4,7 +4,7 @@ import { defineTool, type ToolDefinition } from "../extensions/types.ts";
 import type { ReadonlySessionManager, SessionEntry } from "../session-manager.ts";
 import { reduceSpine, validateTrimRequest } from "./reducer.ts";
 
-const structuralNames = new Set(["spine.open", "spine.close", "spine.next", "spine.spawn"]);
+const structuralNames = new Set(["spine_open", "spine_close", "spine_next", "spine_spawn"]);
 
 function lastAssistant(entries: SessionEntry[]): AssistantMessage | undefined {
 	for (let index = entries.length - 1; index >= 0; index--) {
@@ -24,7 +24,7 @@ export function admitStructuralControl(sessionManager: ReadonlySessionManager, e
 	if (controls.length !== 1 || controls[0]?.name !== expectedName) {
 		throw new Error("A response may contain exactly one Bonsai structural control");
 	}
-	if ((expectedName === "spine.close" || expectedName === "spine.next") && reduceSpine(entries).cursor.length === 1) {
+	if ((expectedName === "spine_close" || expectedName === "spine_next") && reduceSpine(entries).cursor.length === 1) {
 		throw new Error(`${expectedName} requires an open task node`);
 	}
 }
@@ -35,7 +35,7 @@ function success(message: string) {
 
 export function createSpineJitTools(): ToolDefinition[] {
 	const open = defineTool({
-		name: "spine.open",
+		name: "spine_open",
 		label: "Open task",
 		description: "Open and enter a direct child task in the Bonsai task tree.",
 		promptSnippet: "Open a focused child task.",
@@ -43,12 +43,12 @@ export function createSpineJitTools(): ToolDefinition[] {
 		executionMode: "sequential",
 		execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {
 			if (!params.goal.trim()) throw new Error("spine.open requires a non-empty goal");
-			admitStructuralControl(ctx.sessionManager, "spine.open");
+			admitStructuralControl(ctx.sessionManager, "spine_open");
 			return success("Opened Bonsai task node");
 		},
 	});
 	const close = defineTool({
-		name: "spine.close",
+		name: "spine_close",
 		label: "Close task",
 		description: "Close the current Bonsai task with its compact memory and return to its parent.",
 		promptSnippet: "Close the current task with durable memory.",
@@ -56,12 +56,12 @@ export function createSpineJitTools(): ToolDefinition[] {
 		executionMode: "sequential",
 		execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {
 			if (!params.memory.trim()) throw new Error("spine.close requires non-empty memory");
-			admitStructuralControl(ctx.sessionManager, "spine.close");
+			admitStructuralControl(ctx.sessionManager, "spine_close");
 			return success("Closed Bonsai task node");
 		},
 	});
 	const next = defineTool({
-		name: "spine.next",
+		name: "spine_next",
 		label: "Next task",
 		description: "Close the current Bonsai task and enter a new sibling task atomically.",
 		promptSnippet: "Close the current task and enter its next sibling.",
@@ -73,12 +73,12 @@ export function createSpineJitTools(): ToolDefinition[] {
 		execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {
 			if (!params.goal.trim() || !params.memory.trim())
 				throw new Error("spine.next requires non-empty goal and memory");
-			admitStructuralControl(ctx.sessionManager, "spine.next");
+			admitStructuralControl(ctx.sessionManager, "spine_next");
 			return success("Advanced to next Bonsai task node");
 		},
 	});
 	const trim = defineTool({
-		name: "spine.trim",
+		name: "spine_trim",
 		label: "Trim result",
 		description: "Trim the oversized result from the immediately previous completed tool group.",
 		promptSnippet: "Trim an oversized adjacent tool result by its TRIM_ID.",
