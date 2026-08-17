@@ -25,6 +25,7 @@ import {
 
 const OFFICIAL_PACKAGE_NAME = "@earendil-works/pi-coding-agent";
 const OFFICIAL_APP_NAME = "pi";
+const BONSAI_APP_NAME = "Bonsai";
 const OFFICIAL_CONFIG_DIR_NAME = ".pi";
 
 interface DistributionMetadata {
@@ -36,7 +37,7 @@ interface DistributionMetadata {
 function isOfficialDistribution({ packageName, appName, configDirName }: DistributionMetadata): boolean {
 	return (
 		packageName === OFFICIAL_PACKAGE_NAME &&
-		appName === OFFICIAL_APP_NAME &&
+		(appName === OFFICIAL_APP_NAME || appName === BONSAI_APP_NAME) &&
 		configDirName === OFFICIAL_CONFIG_DIR_NAME
 	);
 }

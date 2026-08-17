@@ -925,6 +925,17 @@ export class InteractiveMode {
 
 		// Add header with keybindings from config (unless silenced)
 		if (this.options.verbose || !this.settingsManager.getQuietStartup()) {
+			const bonsaiArt = theme.fg(
+				"accent",
+				[
+					"        \\ | /",
+					"      .-.( ).-.",
+					"        (___)",
+					"     .-`-----`-.",
+					"    /  BONSAI  \\",
+					"   /____________\\",
+				].join("\n"),
+			);
 			const logo = theme.bold(theme.fg("accent", APP_NAME)) + theme.fg("dim", ` v${this.version}`);
 
 			// Build startup instructions using keybinding hint helpers
@@ -962,13 +973,10 @@ export class InteractiveMode {
 				"dim",
 				`Press ${keyText("app.tools.expand")} to show full startup help and loaded resources.`,
 			);
-			const onboarding = theme.fg(
-				"dim",
-				`Pi can explain its own features and look up its docs. Ask it how to use or extend Pi.`,
-			);
+			const onboarding = theme.fg("dim", "Bonsai can explain its features and help you work with the task tree.");
 			this.builtInHeader = new ExpandableText(
-				() => `${logo}\n${compactInstructions}\n${compactOnboarding}\n\n${onboarding}`,
-				() => `${logo}\n${expandedInstructions}\n\n${onboarding}`,
+				() => `${bonsaiArt}\n\n${logo}\n${compactInstructions}\n${compactOnboarding}\n\n${onboarding}`,
+				() => `${bonsaiArt}\n\n${logo}\n${expandedInstructions}\n\n${onboarding}`,
 				this.getStartupExpansionState(),
 				1,
 				0,
