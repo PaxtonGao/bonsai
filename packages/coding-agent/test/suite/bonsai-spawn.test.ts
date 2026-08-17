@@ -77,7 +77,7 @@ export default function reapplyMarkers(pi) {
 				if (!context.systemPrompt) throw new Error("Missing parent system prompt");
 				parentSystemPrompt = context.systemPrompt;
 				parentPrefix = context.messages.map(getMessageText);
-				return fauxAssistantMessage(fauxToolCall("spine.spawn", { tasks }, { id: "spawn-1" }), {
+				return fauxAssistantMessage(fauxToolCall("spine_spawn", { tasks }, { id: "spawn-1" }), {
 					stopReason: "toolUse",
 				});
 			},
@@ -119,8 +119,8 @@ export default function reapplyMarkers(pi) {
 		expect(prefixes[0]).toContain("parent context marker");
 		expect(parentSystemPrompt).toContain("parent prompt marker");
 		expect(childSystemPrompts).toEqual([parentSystemPrompt, parentSystemPrompt]);
-		expect(childTools.every((names) => !names.includes("spine.spawn"))).toBe(true);
-		expect(childTools.every((names) => names.includes("spine.close"))).toBe(true);
+		expect(childTools.every((names) => !names.includes("spine_spawn"))).toBe(true);
+		expect(childTools.every((names) => names.includes("spine_close"))).toBe(true);
 		expect(parentContext).toContain("<spine_spawn_evidence");
 		expect(parentContext).not.toContain('"memory_body"');
 	});
@@ -151,7 +151,7 @@ export default function reapplyMarkers(pi) {
 		harness.setResponses([
 			fauxAssistantMessage(
 				fauxToolCall(
-					"spine.spawn",
+					"spine_spawn",
 					{
 						tasks: [
 							{ summary: "one", prompt: "wait one" },
@@ -181,7 +181,7 @@ export default function reapplyMarkers(pi) {
 		harness.setResponses([
 			fauxAssistantMessage(
 				fauxToolCall(
-					"spine.spawn",
+					"spine_spawn",
 					{
 						tasks: Array.from({ length: 5 }, (_, index) => ({
 							summary: `task ${index}`,

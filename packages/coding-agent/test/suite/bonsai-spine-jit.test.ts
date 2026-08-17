@@ -15,10 +15,13 @@ describe("Bonsai SpineJIT integration", () => {
 	it("registers the SpineJIT tools on a normal AgentSession", async () => {
 		const harness = await createHarness();
 		harnesses.push(harness);
+		const toolNames = harness.session.getActiveToolNames();
 
-		expect(harness.session.getActiveToolNames()).toEqual(
-			expect.arrayContaining(["spine.open", "spine.close", "spine.next", "spine.trim"]),
+		expect(toolNames).toEqual(expect.arrayContaining(["spine_open", "spine_close", "spine_next", "spine_trim"]));
+		expect(toolNames.filter((name) => name.startsWith("spine_"))).toEqual(
+			expect.arrayContaining(["spine_open", "spine_close", "spine_next", "spine_trim", "spine_spawn"]),
 		);
+		expect(toolNames.every((name) => /^[a-zA-Z0-9_-]+$/.test(name))).toBe(true);
 	});
 
 	it("projects a closed child to user evidence and node memory before the next provider request", async () => {
@@ -26,11 +29,11 @@ describe("Bonsai SpineJIT integration", () => {
 		harnesses.push(harness);
 		let closedContext = "";
 		harness.setResponses([
-			fauxAssistantMessage(fauxToolCall("spine.open", { goal: "inspect" }, { id: "open-1" }), {
+			fauxAssistantMessage(fauxToolCall("spine_open", { goal: "inspect" }, { id: "open-1" }), {
 				stopReason: "toolUse",
 			}),
 			fauxAssistantMessage("private working detail"),
-			fauxAssistantMessage(fauxToolCall("spine.close", { memory: "inspection complete" }, { id: "close-1" }), {
+			fauxAssistantMessage(fauxToolCall("spine_close", { memory: "inspection complete" }, { id: "close-1" }), {
 				stopReason: "toolUse",
 			}),
 			(context) => {
@@ -69,7 +72,7 @@ describe("Bonsai SpineJIT integration", () => {
 				return fauxAssistantMessage("oversized result observed");
 			},
 			() =>
-				fauxAssistantMessage(fauxToolCall("spine.trim", { TRIM_ID: trimId, op: "snip" }, { id: "trim-1" }), {
+				fauxAssistantMessage(fauxToolCall("spine_trim", { TRIM_ID: trimId, op: "snip" }, { id: "trim-1" }), {
 					stopReason: "toolUse",
 				}),
 			(context) => {
@@ -92,8 +95,8 @@ describe("Bonsai SpineJIT integration", () => {
 		harness.setResponses([
 			fauxAssistantMessage(
 				[
-					fauxToolCall("spine.open", { goal: "one" }, { id: "open-a" }),
-					fauxToolCall("spine.open", { goal: "two" }, { id: "open-b" }),
+					fauxToolCall("spine_open", { goal: "one" }, { id: "open-a" }),
+					fauxToolCall("spine_open", { goal: "two" }, { id: "open-b" }),
 				],
 				{ stopReason: "toolUse" },
 			),

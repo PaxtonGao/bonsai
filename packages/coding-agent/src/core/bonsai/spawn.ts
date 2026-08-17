@@ -32,7 +32,7 @@ function childSessionManager(runtime: SpawnRuntime): SessionManager {
 
 async function createChild(runtime: SpawnRuntime, prefix: AgentMessage[], systemPrompt: string) {
 	const parent = runtime.parent;
-	const activeToolNames = parent.getActiveToolNames().filter((name) => name !== "spine.spawn");
+	const activeToolNames = parent.getActiveToolNames().filter((name) => name !== "spine_spawn");
 	const services = await createAgentSessionServices({
 		cwd: runtime.services.cwd,
 		agentDir: runtime.services.agentDir,
@@ -177,7 +177,7 @@ async function runSpawn(
 
 export function createSpineSpawnTool(getRuntime: () => SpawnRuntime | undefined): ToolDefinition {
 	return defineTool({
-		name: "spine.spawn",
+		name: "spine_spawn",
 		label: "Spawn tasks",
 		description: "Run two to four independent child tasks concurrently and import their typed receipt.",
 		promptSnippet: "Split independent work into in-process Bonsai child sessions.",
@@ -195,7 +195,7 @@ export function createSpineSpawnTool(getRuntime: () => SpawnRuntime | undefined)
 		),
 		executionMode: "sequential",
 		execute: async (_toolCallId, params, signal, _onUpdate, ctx) => {
-			admitStructuralControl(ctx.sessionManager, "spine.spawn");
+			admitStructuralControl(ctx.sessionManager, "spine_spawn");
 			const tasks = params.tasks.map((task) => ({ summary: task.summary.trim(), prompt: task.prompt.trim() }));
 			if (tasks.some((task) => !task.summary || !task.prompt))
 				throw new Error("spine.spawn tasks must be non-empty");

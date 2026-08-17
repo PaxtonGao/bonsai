@@ -5,7 +5,7 @@ import { type MemorySlot, nodeIdText, type SpineSnapshot } from "./model.ts";
 
 function applyTrim(message: AgentMessage, boundary: number | undefined, snapshot: SpineSnapshot): AgentMessage {
 	if (message.role !== "toolResult" || boundary === undefined) return message;
-	if (message.toolName === "spine.spawn" && !message.isError) {
+	if (message.toolName === "spine_spawn" && !message.isError) {
 		return { ...message, content: [{ type: "text", text: '{"status":"success"}' }] };
 	}
 	const edit = snapshot.trimEdits.find(

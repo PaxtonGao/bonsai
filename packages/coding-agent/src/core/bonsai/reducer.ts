@@ -68,21 +68,21 @@ function strictStrings(value: unknown, keys: string[]): Record<string, string> |
 function classifyControl(group: SpineToolGroup): StructuralControl | undefined {
 	if (group.calls.some((call) => call.outcome === "unknown")) return undefined;
 	const structuralCalls = group.calls.filter((call) =>
-		["spine.open", "spine.close", "spine.next", "spine.spawn"].includes(call.name),
+		["spine_open", "spine_close", "spine_next", "spine_spawn"].includes(call.name),
 	);
 	if (structuralCalls.length !== 1) return undefined;
 	const call = structuralCalls[0];
 	if (!call || call.outcome !== "succeeded") return undefined;
-	if (call.name === "spine.spawn") {
+	if (call.name === "spine_spawn") {
 		const tasks = parseSpawnTasks(call?.arguments);
 		const receipt = parseSpawnReceipt(call.output, tasks);
 		return tasks && receipt ? { kind: "spawn", tasks, receipt } : undefined;
 	}
-	if (call.name === "spine.open") {
+	if (call.name === "spine_open") {
 		const args = strictStrings(call.arguments, ["goal"]);
 		return args ? { kind: "open", goal: args.goal } : undefined;
 	}
-	if (call.name === "spine.close") {
+	if (call.name === "spine_close") {
 		const args = strictStrings(call.arguments, ["memory"]);
 		return args ? { kind: "close", memory: args.memory } : undefined;
 	}
@@ -502,7 +502,7 @@ export function deriveTrimProjection(events: SpineEvent[]): TrimEdit[] {
 	for (const event of events) {
 		if (event.kind !== "tool-group") continue;
 		for (const call of event.group.calls.filter(
-			(candidate) => candidate.name === "spine.trim" && candidate.outcome === "succeeded",
+			(candidate) => candidate.name === "spine_trim" && candidate.outcome === "succeeded",
 		)) {
 			const request = parseTrimRequest(call.arguments);
 			if (!request) continue;
