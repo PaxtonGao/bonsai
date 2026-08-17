@@ -2,8 +2,13 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { type Context, fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai";
+import type { TUI } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { afterEach, describe, expect, it } from "vitest";
+import { createSpineSpawnTool } from "../../src/core/bonsai/spawn.ts";
+import { ToolExecutionComponent } from "../../src/modes/interactive/components/tool-execution.ts";
+import { initTheme } from "../../src/modes/interactive/theme/theme.ts";
+import { stripAnsi } from "../../src/utils/ansi.ts";
 import { createHarness, getMessageText, type Harness } from "./harness.ts";
 
 describe("Bonsai SpineSpawn integration", () => {
@@ -11,6 +16,41 @@ describe("Bonsai SpineSpawn integration", () => {
 
 	afterEach(() => {
 		while (harnesses.length > 0) harnesses.pop()?.cleanup();
+	});
+
+	it("renders a compact structured receipt", () => {
+		initTheme("dark");
+		const tasks = [
+			{ summary: "reducer responsibilities", prompt: "inspect reducer" },
+			{ summary: "child limits", prompt: "inspect spawn" },
+		];
+		const receipt = {
+			schema: "spine.spawn.result.v1" as const,
+			results: [
+				{ ordinal: 0, outcome: "completed" as const, memory_body: "long reducer memory" },
+				{ ordinal: 1, outcome: "errored" as const, memory_body: "long error memory", diagnostic: "failed" },
+			],
+		};
+		const component = new ToolExecutionComponent(
+			"spine_spawn",
+			"spawn-render",
+			{ tasks },
+			{},
+			createSpineSpawnTool(() => undefined),
+			{ requestRender: () => {} } as unknown as TUI,
+			process.cwd(),
+		);
+		component.updateResult({
+			content: [{ type: "text", text: JSON.stringify(receipt) }],
+			details: receipt,
+			isError: false,
+		});
+
+		const rendered = stripAnsi(component.render(120).join("\n"));
+		expect(rendered).toContain("Spawn finished (2 branches)");
+		expect(rendered).toContain("[completed] 1. reducer responsibilities");
+		expect(rendered).toContain("[errored] 2. child limits");
+		expect(rendered).not.toContain("long reducer memory");
 	});
 
 	it("runs ordered in-process children from one projected prefix without nested spawn", async () => {
@@ -175,6 +215,58 @@ export default function reapplyMarkers(pi) {
 
 		expect(childSignals).toHaveLength(2);
 		expect(childSignals.every((signal) => signal.aborted)).toBe(true);
+	});
+
+	it("preserves child compaction context alongside the inherited prefix", async () => {
+		const seedTool: AgentTool = {
+			name: "seed-child",
+			label: "Seed child",
+			description: "Create child history before compaction",
+			parameters: Type.Object({}),
+			execute: async () => ({ content: [{ type: "text", text: "seeded child history" }], details: {} }),
+		};
+		const harness = await createHarness({
+			settings: { compaction: { keepRecentTokens: 1 } },
+			tools: [seedTool],
+		});
+		harnesses.push(harness);
+		const extensionDir = join(harness.tempDir, ".pi", "extensions");
+		mkdirSync(extensionDir, { recursive: true });
+		writeFileSync(
+			join(extensionDir, "child-compaction.ts"),
+			`export default function childCompaction(pi) {
+	pi.on("session_before_compact", (event) => ({ compaction: {
+		summary: "child compacted summary",
+		firstKeptEntryId: event.preparation.firstKeptEntryId,
+		tokensBefore: event.preparation.tokensBefore,
+		details: {}
+	} }));
+}
+`,
+		);
+		const tasks = [
+			{ summary: "alpha", prompt: "compact alpha" },
+			{ summary: "beta", prompt: "finish beta" },
+		];
+		let retriedContext = "";
+		harness.setResponses([
+			fauxAssistantMessage(fauxToolCall("spine_spawn", { tasks }, { id: "spawn-compact" }), {
+				stopReason: "toolUse",
+			}),
+			fauxAssistantMessage(fauxToolCall("seed-child", {}, { id: "seed-alpha" }), { stopReason: "toolUse" }),
+			fauxAssistantMessage("beta memory"),
+			fauxAssistantMessage("", { stopReason: "error", errorMessage: "maximum context length exceeded" }),
+			(context) => {
+				retriedContext = context.messages.map(getMessageText).join("\n");
+				return fauxAssistantMessage("alpha memory after compaction");
+			},
+			fauxAssistantMessage("parent resumed"),
+		]);
+
+		await harness.session.prompt("parent inherited prefix");
+
+		expect(retriedContext).toContain("parent inherited prefix");
+		expect(retriedContext).toContain("child compacted summary");
 	});
 
 	it("returns an errored receipt when a child exceeds its execution deadline", async () => {
