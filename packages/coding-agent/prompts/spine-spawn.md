@@ -1,0 +1,1 @@
+Split independent work into one parallel batch of in-process Bonsai child sessions. Child sessions cannot call spine_spawn. Resume only after all branches settle, then synthesize results in task order.

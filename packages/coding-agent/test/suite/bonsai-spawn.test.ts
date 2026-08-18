@@ -99,6 +99,7 @@ export default function reapplyMarkers(pi) {
 		const prefixes: string[][] = [];
 		const childTools: string[][] = [];
 		const childSystemPrompts: string[] = [];
+		const childAssignments: string[] = [];
 		let parentPrefix: string[] = [];
 		let parentSystemPrompt = "";
 		let parentContext = "";
@@ -108,6 +109,7 @@ export default function reapplyMarkers(pi) {
 			prefixes.push(texts.slice(0, -1));
 			childTools.push(context.tools?.map((tool) => tool.name) ?? []);
 			childSystemPrompts.push(context.systemPrompt);
+			childAssignments.push(texts.at(-1) ?? "");
 			return texts.at(-1)?.includes("You are: beta")
 				? fauxAssistantMessage("", { stopReason: "error", errorMessage: "beta failed" })
 				: fauxAssistantMessage(`memory:${texts.at(-1)}`);
@@ -163,6 +165,7 @@ export default function reapplyMarkers(pi) {
 		expect(childSystemPrompts).toEqual([parentSystemPrompt, parentSystemPrompt]);
 		expect(childTools.every((names) => !names.includes("spine_spawn"))).toBe(true);
 		expect(childTools.every((names) => names.includes("spine_close"))).toBe(true);
+		expect(childAssignments.every((prompt) => prompt.includes("Do not call spine_spawn."))).toBe(true);
 		expect(parentContext).toContain("<spine_spawn_evidence");
 		expect(parentContext).not.toContain('"memory_body"');
 	});

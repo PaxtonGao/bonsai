@@ -1,6 +1,7 @@
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 import { defineTool, type ToolDefinition } from "../extensions/types.ts";
+import { loadPromptTemplate } from "../prompt-template.ts";
 import type { ReadonlySessionManager, SessionEntry } from "../session-manager.ts";
 import { reduceSpine, validateTrimRequest } from "./reducer.ts";
 
@@ -37,8 +38,8 @@ export function createSpineJitTools(): ToolDefinition[] {
 	const open = defineTool({
 		name: "spine_open",
 		label: "Open task",
-		description: "Open and enter a direct child task in the Bonsai task tree.",
-		promptSnippet: "Open a focused child task.",
+		description: loadPromptTemplate("spine-open-description"),
+		promptSnippet: loadPromptTemplate("spine-open"),
 		parameters: Type.Object({ goal: Type.String({ minLength: 1 }) }, { additionalProperties: false }),
 		executionMode: "sequential",
 		execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {
@@ -50,8 +51,8 @@ export function createSpineJitTools(): ToolDefinition[] {
 	const close = defineTool({
 		name: "spine_close",
 		label: "Close task",
-		description: "Close the current Bonsai task with its compact memory and return to its parent.",
-		promptSnippet: "Close the current task with durable memory.",
+		description: loadPromptTemplate("spine-close-description"),
+		promptSnippet: loadPromptTemplate("spine-close"),
 		parameters: Type.Object({ memory: Type.String({ minLength: 1 }) }, { additionalProperties: false }),
 		executionMode: "sequential",
 		execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {
@@ -63,8 +64,8 @@ export function createSpineJitTools(): ToolDefinition[] {
 	const next = defineTool({
 		name: "spine_next",
 		label: "Next task",
-		description: "Close the current Bonsai task and enter a new sibling task atomically.",
-		promptSnippet: "Close the current task and enter its next sibling.",
+		description: loadPromptTemplate("spine-next-description"),
+		promptSnippet: loadPromptTemplate("spine-next"),
 		parameters: Type.Object(
 			{ goal: Type.String({ minLength: 1 }), memory: Type.String({ minLength: 1 }) },
 			{ additionalProperties: false },
@@ -80,8 +81,8 @@ export function createSpineJitTools(): ToolDefinition[] {
 	const trim = defineTool({
 		name: "spine_trim",
 		label: "Trim result",
-		description: "Trim the oversized result from the immediately previous completed tool group.",
-		promptSnippet: "Trim an oversized adjacent tool result by its TRIM_ID.",
+		description: loadPromptTemplate("spine-trim-description"),
+		promptSnippet: loadPromptTemplate("spine-trim"),
 		parameters: Type.Object(
 			{
 				TRIM_ID: Type.String({ minLength: 1 }),

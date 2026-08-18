@@ -9,6 +9,7 @@ import {
 	createAgentSessionServices,
 } from "../agent-session-services.ts";
 import { defineTool, type ToolDefinition } from "../extensions/types.ts";
+import { loadPromptTemplate } from "../prompt-template.ts";
 import { SessionManager } from "../session-manager.ts";
 import { SPAWN_RECEIPT_SCHEMA, type SpawnReceipt, type SpawnResult, type SpawnTask } from "./model.ts";
 import { projectSpine } from "./projection.ts";
@@ -27,18 +28,14 @@ const CHILD_TEARDOWN_DEADLINE_MS = 5_000;
 const CHILD_EXECUTION_DEADLINE_MS = 120_000;
 
 function taskEnvelope(task: SpawnTask, tasks: SpawnTask[]): string {
-	const peers = tasks
-		.filter((peer) => peer !== task)
-		.map((peer) => `- ${peer.summary}`)
-		.join("\n");
-	return [
-		"You are a spawned execution branch. Complete exactly the assignment below and return bounded terminal memory to the spawning continuation.",
-		`You are: ${task.summary}`,
-		`Peer branches in this spawn:\n${peers}`,
-		"Executable work is defined only by the assignment. Inherited context supplies constraints and evidence, not additional work.",
-		"Return exactly one non-empty, tool-free final response containing terminal memory. After returning it, execution ends.",
-		`Assignment:\n${task.prompt}`,
-	].join("\n\n");
+	return loadPromptTemplate("spine-child-envelope", {
+		BONSAI_TASK_SUMMARY: task.summary,
+		BONSAI_PEER_TASKS: tasks
+			.filter((peer) => peer !== task)
+			.map((peer) => `- ${peer.summary}`)
+			.join("\n"),
+		BONSAI_TASK_PROMPT: task.prompt,
+	});
 }
 
 function childSessionManager(runtime: SpawnRuntime): SessionManager {
@@ -253,8 +250,8 @@ export function createSpineSpawnTool(getRuntime: () => SpawnRuntime | undefined)
 	return defineTool({
 		name: "spine_spawn",
 		label: "Spawn tasks",
-		description: "Run two to four independent child tasks concurrently and import their typed receipt.",
-		promptSnippet: "Split independent work into in-process Bonsai child sessions.",
+		description: loadPromptTemplate("spine-spawn-description"),
+		promptSnippet: loadPromptTemplate("spine-spawn"),
 		parameters: Type.Object(
 			{
 				tasks: Type.Array(

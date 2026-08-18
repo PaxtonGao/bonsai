@@ -2,6 +2,20 @@ import { describe, expect, test } from "vitest";
 import { buildSystemPrompt } from "../src/core/system-prompt.ts";
 
 describe("buildSystemPrompt", () => {
+	test("assembles custom prompts and project context from bundled templates", () => {
+		const prompt = buildSystemPrompt({
+			customPrompt: "Custom identity",
+			appendSystemPrompt: "Appended policy",
+			contextFiles: [{ path: "AGENTS.md", content: "Project policy" }],
+			skills: [],
+			cwd: "/workspace",
+		});
+
+		expect(prompt).toContain("Custom identity\n\nAppended policy");
+		expect(prompt).toContain('<project_instructions path="AGENTS.md">\nProject policy');
+		expect(prompt).toContain("Current working directory: /workspace");
+	});
+
 	describe("empty tools", () => {
 		test("shows (none) for empty tools list", () => {
 			const prompt = buildSystemPrompt({
