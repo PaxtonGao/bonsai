@@ -113,6 +113,7 @@ describe("ToolExecutionComponent parity", () => {
 			process.cwd(),
 		);
 		component.updateResult({ content: [], details: { diff: "+1 after", firstChangedLine: 1 }, isError: false });
+		component.setExpanded(true);
 		const rendered = stripAnsi(component.render(120).join("\n"));
 		expect(rendered).toContain("edit");
 		expect(rendered).toContain("README.md");
@@ -130,7 +131,7 @@ describe("ToolExecutionComponent parity", () => {
 			process.cwd(),
 		);
 		const rendered = stripAnsi(component.render(120).join("\n"));
-		expect(rendered).toContain("read");
+		expect(rendered).toContain("读取文档");
 		expect(rendered).toContain("README.md");
 	});
 
@@ -191,9 +192,10 @@ describe("ToolExecutionComponent parity", () => {
 		expect(rendered).not.toContain("[Showing lines 2001-4000 of 4000. Full output:");
 	});
 
-	test("keeps collapsed tool rows compact and action-first", () => {
+	test("summarizes collapsed commands in one colored action row", () => {
 		const tool = createBashToolDefinition(process.cwd());
-		const command = `node --input-type=module -e "${"check dependency; ".repeat(15)}"`;
+		const command =
+			"~/.kimi-webbridge/bin/kimi-webbridge restart 2>&1; sleep 2; ~/.kimi-webbridge/bin/kimi-webbridge status";
 		const component = new ToolExecutionComponent(
 			"bash",
 			"tool-compact-bash",
@@ -214,16 +216,50 @@ describe("ToolExecutionComponent parity", () => {
 
 		const collapsed = component.render(100);
 		const collapsedText = stripAnsi(collapsed.join("\n"));
-		expect(collapsedText).toContain("bash $");
-		expect(collapsed).toHaveLength(7);
-		expect(collapsed.join("\n")).not.toContain(theme.getBgAnsi("toolSuccessBg"));
+		expect(collapsedText).toContain("🤖 重启并检查：kimi-webbridge");
+		expect(collapsedText).not.toContain("2>&1");
+		expect(collapsed).toHaveLength(2);
+		expect(collapsed.join("\n")).toContain(theme.getBgAnsi("toolSuccessBg"));
 
 		component.setExpanded(true);
 		const expanded = component.render(100);
-		expect(stripAnsi(expanded.join("\n")).match(/check dependency;/g)?.length ?? 0).toBeGreaterThan(
-			collapsedText.match(/check dependency;/g)?.length ?? 0,
-		);
+		expect(stripAnsi(expanded.join("\n"))).toContain("bash $");
+		expect(stripAnsi(expanded.join("\n"))).toContain("2>&1");
 		expect(expanded.join("\n")).toContain(theme.getBgAnsi("toolSuccessBg"));
+	});
+
+	test("summarizes common tool actions without model calls", () => {
+		const scenarios = [
+			{ name: "read", args: { path: "screenshots/result.png" }, expected: "🧐 查看图片：screenshots/result.png" },
+			{ name: "edit", args: { path: "src/config.ts" }, expected: "✏️ 编辑文件：src/config.ts" },
+			{
+				name: "grep",
+				args: { pattern: "ToolExecutionComponent", path: "src" },
+				expected: "🔍 搜索代码：ToolExecutionComponent · src",
+			},
+			{ name: "web_search", args: { query: "Bonsai architecture" }, expected: "🔍 网络搜索：Bonsai architecture" },
+			{
+				name: "spine_spawn",
+				args: { tasks: [{ summary: "one" }, { summary: "two" }] },
+				expected: "🌳 并行执行 2 个任务分支",
+			},
+		] as const;
+
+		for (const scenario of scenarios) {
+			const customDefinition = ["web_search", "spine_spawn"].includes(scenario.name)
+				? createBaseToolDefinition(scenario.name)
+				: undefined;
+			const component = new ToolExecutionComponent(
+				scenario.name,
+				`tool-${scenario.name}`,
+				scenario.args,
+				{},
+				customDefinition,
+				createFakeTui(),
+				process.cwd(),
+			);
+			expect(stripAnsi(component.render(120).join("\n"))).toContain(scenario.expected);
+		}
 	});
 
 	test("does not duplicate built-in headers when passed the active built-in definition", () => {
@@ -237,6 +273,7 @@ describe("ToolExecutionComponent parity", () => {
 			process.cwd(),
 		);
 		component.updateResult({ content: [{ type: "text", text: "hello" }], details: undefined, isError: false }, false);
+		component.setExpanded(true);
 		const rendered = stripAnsi(component.render(120).join("\n"));
 		expect(rendered.match(/\bread\b/g)?.length ?? 0).toBe(1);
 	});
@@ -279,6 +316,7 @@ describe("ToolExecutionComponent parity", () => {
 			process.cwd(),
 		);
 		component.updateResult({ content: [{ type: "text", text: "hello" }], details: undefined, isError: false }, false);
+		component.setExpanded(true);
 		const rendered = stripAnsi(component.render(120).join("\n"));
 		expect(rendered).toContain("read");
 		expect(rendered).toContain("README.md");
@@ -301,6 +339,7 @@ describe("ToolExecutionComponent parity", () => {
 			process.cwd(),
 		);
 		component.updateResult({ content: [{ type: "text", text: "hello" }], details: undefined, isError: false }, false);
+		component.setExpanded(true);
 		const rendered = stripAnsi(component.render(120).join("\n"));
 		expect(rendered).toContain("override call");
 		expect(rendered).toContain("override result");
@@ -324,6 +363,7 @@ describe("ToolExecutionComponent parity", () => {
 			process.cwd(),
 		);
 		component.updateResult({ content: [{ type: "text", text: "hello" }], details: undefined, isError: false }, false);
+		component.setExpanded(true);
 		const rendered = stripAnsi(component.render(120).join("\n"));
 		expect(rendered).toContain("wrapped override call");
 		expect(rendered).toContain("wrapped override result");
@@ -398,8 +438,9 @@ describe("ToolExecutionComponent parity", () => {
 
 		const collapsed = stripAnsi(component.render(120).join("\n"));
 		expect(collapsed).toContain("custom_tool");
-		expect(collapsed).toContain("line-3");
-		expect(collapsed).not.toContain("line-4");
+		expect(collapsed).toContain("line-10");
+		expect(collapsed).not.toContain("line-11");
+		expect(collapsed).toContain("5 more lines");
 		expect(collapsed).toContain("to expand");
 
 		component.setExpanded(true);
@@ -418,6 +459,7 @@ describe("ToolExecutionComponent parity", () => {
 			createFakeTui(),
 			process.cwd(),
 		);
+		component.setExpanded(true);
 		const rendered = stripAnsi(component.render(120).join("\n"));
 		expect(rendered).toContain("one");
 		expect(rendered).toContain("two");
@@ -458,9 +500,14 @@ describe("ToolExecutionComponent parity", () => {
 		const error = "Offset 120 is beyond end of file (96 lines total)";
 		component.updateResult({ content: [{ type: "text", text: error }], details: undefined, isError: true }, false);
 
-		const rendered = component.render(120).join("\n");
-		expect(stripAnsi(rendered)).toContain(error);
-		expect(rendered).toContain(theme.fg("toolOutput", error));
+		const collapsed = component.render(120).join("\n");
+		expect(stripAnsi(collapsed)).toContain("Offset 120 is beyond end of file");
+		expect(collapsed).toContain(theme.getBgAnsi("toolErrorBg"));
+
+		component.setExpanded(true);
+		const expanded = component.render(120).join("\n");
+		expect(stripAnsi(expanded)).toContain(error);
+		expect(expanded).toContain(theme.fg("toolOutput", error));
 	});
 
 	test("collapses ordinary read results until expanded", () => {
@@ -479,7 +526,7 @@ describe("ToolExecutionComponent parity", () => {
 		);
 
 		const collapsed = stripAnsi(component.render(120).join("\n"));
-		expect(collapsed).toContain("read");
+		expect(collapsed).toContain("读取文件");
 		expect(collapsed).toContain("notes.txt");
 		expect(collapsed).not.toContain("hidden content");
 
@@ -493,7 +540,7 @@ describe("ToolExecutionComponent parity", () => {
 			title: "SKILL.md",
 			path: join(process.cwd(), "attio", "SKILL.md"),
 			content: "---\nname: attio\ndescription: CRM helper\n---\n\n# Hidden skill instructions",
-			compact: "[skill] attio",
+			compact: "🧩 加载技能：attio",
 			hidden: "Hidden skill instructions",
 			absent: "read skill attio",
 		},
@@ -501,7 +548,7 @@ describe("ToolExecutionComponent parity", () => {
 			title: "AGENTS.md",
 			path: join(process.cwd(), ".pi", "AGENTS.md"),
 			content: "Hidden resource instructions",
-			compact: "read resource .pi/AGENTS.md",
+			compact: "📖 读取项目指令：",
 			hidden: "Hidden resource instructions",
 			absent: undefined,
 		},
@@ -509,7 +556,7 @@ describe("ToolExecutionComponent parity", () => {
 			title: "AGENTS.override.md",
 			path: join(process.cwd(), ".pi", "AGENTS.override.md"),
 			content: "Hidden override instructions",
-			compact: "read resource .pi/AGENTS.override.md",
+			compact: "📖 读取项目指令：",
 			hidden: "Hidden override instructions",
 			absent: undefined,
 		},
@@ -517,7 +564,7 @@ describe("ToolExecutionComponent parity", () => {
 			title: "outside AGENTS.md",
 			path: resolve(process.cwd(), "..", "AGENTS.md"),
 			content: "Hidden outside resource instructions",
-			compact: `read resource ${resolve(process.cwd(), "..", "AGENTS.md").replace(/\\/g, "/")}`,
+			compact: "📖 读取项目指令：",
 			hidden: "Hidden outside resource instructions",
 			absent: undefined,
 		},
@@ -525,7 +572,7 @@ describe("ToolExecutionComponent parity", () => {
 			title: "Pi documentation",
 			path: getReadmePath(),
 			content: "Hidden docs content",
-			compact: "read docs README.md",
+			compact: "📚 读取文档：",
 			hidden: "Hidden docs content",
 			absent: undefined,
 		},
@@ -559,8 +606,8 @@ describe("ToolExecutionComponent parity", () => {
 	}
 
 	for (const scenario of [
-		{ title: "SKILL.md", path: join(process.cwd(), "attio", "SKILL.md"), compact: "[skill] attio:120-329" },
-		{ title: "Pi documentation", path: getReadmePath(), compact: "read docs README.md:120-329" },
+		{ title: "SKILL.md", path: join(process.cwd(), "attio", "SKILL.md"), compact: "🧩 加载技能：attio:120-329" },
+		{ title: "Pi documentation", path: getReadmePath(), compact: "README.md:120-329" },
 	] as const) {
 		test(`shows the read line range in compact ${scenario.title} reads before the expand hint`, () => {
 			const component = new ToolExecutionComponent(
@@ -575,7 +622,7 @@ describe("ToolExecutionComponent parity", () => {
 
 			const collapsed = stripAnsi(component.render(120).join("\n"));
 			expect(collapsed).toContain(scenario.compact);
-			expect(collapsed.indexOf(":120-329")).toBeLessThan(collapsed.indexOf("to expand"));
+			expect(collapsed.split("\n")).toHaveLength(2);
 		});
 	}
 });

@@ -46,11 +46,15 @@ describe("Bonsai SpineSpawn integration", () => {
 			isError: false,
 		});
 
-		const rendered = stripAnsi(component.render(120).join("\n"));
-		expect(rendered).toContain("Spawn finished (2 branches)");
-		expect(rendered).toContain("[completed] 1. reducer responsibilities");
-		expect(rendered).toContain("[errored] 2. child limits");
-		expect(rendered).not.toContain("long reducer memory");
+		const collapsed = stripAnsi(component.render(120).join("\n"));
+		expect(collapsed).toContain("🌳 并行执行 2 个任务分支");
+		expect(collapsed).not.toContain("long reducer memory");
+
+		component.setExpanded(true);
+		const expanded = stripAnsi(component.render(120).join("\n"));
+		expect(expanded).toContain("Spawn finished (2 branches)");
+		expect(expanded).toContain("[completed] 1. reducer responsibilities");
+		expect(expanded).toContain("[errored] 2. child limits");
 	});
 
 	it("runs ordered in-process children from one projected prefix without nested spawn", async () => {

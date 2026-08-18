@@ -12,6 +12,7 @@
 以下方向只记录名称。用户继续讨论并形成明确目标后再创建规格：
 
 - trace GUI 与上下文可视化
+- TUI tool detail interaction：为 transcript 增加组件级鼠标命中测试，点击单个 tool 摘要时打开详情 overlay；需定义滚动坐标映射、选择冲突、焦点、关闭行为和无鼠标终端的键盘等价路径。
 - Resume/trace 的 Bonsai-aware 树视图：按 spawn call 聚合 child session，并显示 task summary、ordinal、outcome 和 execution reference；区分 Spine 节点、spawn 分支与普通 session fork。需要先定义 session metadata，再改 session selector，不在 Phase 1 增加 synthetic batch entity。
 - MCP/context catalog 重构
 - workspace isolation、worktree 和 merge

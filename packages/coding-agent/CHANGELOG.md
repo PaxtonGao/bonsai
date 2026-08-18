@@ -11,7 +11,7 @@
 - Consolidated the Bonsai runtime identity into the bundled system prompt instead of appending a project-local identity prompt from the launcher.
 - Organized bundled Bonsai prompts into agent, tool, and internal template directories.
 - Expanded Bonsai tool guidance and parameter descriptions to preserve Spine context-ownership, lifecycle, memory, trimming, and spawn contracts.
-- Compressed default tool rendering into action-first summaries while preserving complete expanded output and self-rendered tool previews.
+- Rendered recognized tools as one-line colored, deterministic action summaries while preserving complete expanded output and custom tool renderers.
 
 ### Fixed
 

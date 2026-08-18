@@ -1,3 +1,4 @@
+import { basename, dirname } from "node:path";
 import {
 	Box,
 	type Component,
@@ -11,13 +12,103 @@ import {
 } from "@earendil-works/pi-tui";
 import type { ToolDefinition, ToolRenderContext } from "../../../core/extensions/types.ts";
 import { createAllToolDefinitions, type ToolName } from "../../../core/tools/index.ts";
-import { getTextOutput as getRenderedTextOutput } from "../../../core/tools/render-utils.ts";
+import { getTextOutput as getRenderedTextOutput, shortenPath } from "../../../core/tools/render-utils.ts";
 import { convertToPng } from "../../../utils/image-convert.ts";
 import { theme } from "../theme/theme.ts";
 import { keyHint } from "./keybinding-hints.ts";
 
 const FALLBACK_PREVIEW_LINES = 10;
-const COLLAPSED_TOOL_MAX_LINES = 6;
+const IMAGE_EXTENSIONS = /\.(?:avif|bmp|gif|jpe?g|png|svg|webp)$/i;
+
+function stringArg(args: unknown, ...keys: string[]): string {
+	if (!args || typeof args !== "object" || Array.isArray(args)) return "";
+	const values = args as Record<string, unknown>;
+	for (const key of keys) {
+		if (typeof values[key] === "string" && values[key].trim()) return values[key].trim();
+	}
+	return "";
+}
+
+function compact(text: string, maxLength = 72): string {
+	const normalized = text.replace(/\s+/g, " ").trim();
+	return normalized.length > maxLength ? `${normalized.slice(0, maxLength - 3)}...` : normalized;
+}
+
+function readRange(args: unknown): string {
+	if (!args || typeof args !== "object" || Array.isArray(args)) return "";
+	const values = args as Record<string, unknown>;
+	const offset = typeof values.offset === "number" ? values.offset : undefined;
+	const limit = typeof values.limit === "number" ? values.limit : undefined;
+	if (offset === undefined && limit === undefined) return "";
+	const start = offset ?? 1;
+	return `:${start}${limit === undefined ? "" : `-${start + limit - 1}`}`;
+}
+
+function summarizeBash(command: string): string {
+	const restart = command.match(/(?:^|[;&|]\s*)([~./][^\s;&|]+)\s+restart\b/i);
+	if (restart?.[1] && /\bstatus\b/i.test(command)) {
+		return `🤖 重启并检查：${basename(restart[1])}`;
+	}
+	if (/\b(?:curl|wget)\b/i.test(command)) {
+		const url = command.match(/https?:\/\/[^\s"'|;)]+/)?.[0];
+		if (url) {
+			try {
+				const parsed = new URL(url);
+				return `🌐 下载或请求：${compact(`${parsed.hostname}${parsed.pathname === "/" ? "" : parsed.pathname}`)}`;
+			} catch {
+				return `🌐 下载或请求：${compact(url)}`;
+			}
+		}
+	}
+	if (/\b(?:npm|pnpm|yarn|bun)\s+(?:i|install|add)\b/i.test(command)) return "📦 安装依赖";
+	if (/\b(?:vitest|pytest|cargo\s+test|go\s+test|(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?test)\b/i.test(command))
+		return "🧪 运行测试";
+	if (/\b(?:rg|grep)\b/i.test(command)) return `🔍 搜索文本：${compact(command)}`;
+	if (/\b(?:cat|head|tail|sed\s+-n)\b/i.test(command)) return `📖 查看文件或输出：${compact(command)}`;
+	const git = command.match(/\bgit\s+([a-z-]+)/i);
+	if (git?.[1]) return `🔀 执行 Git 操作：${git[1]}`;
+	return `🤖 运行命令：${compact(command)}`;
+}
+
+function summarizeTool(toolName: string, label: string, args: unknown): string | undefined {
+	const name = toolName.toLowerCase();
+	const path = stringArg(args, "path", "file_path", "image_path");
+	if (name === "bash") return summarizeBash(stringArg(args, "command"));
+	if (name === "read") {
+		if (path && IMAGE_EXTENSIONS.test(path)) return `🧐 查看图片：${shortenPath(path)}`;
+		const range = readRange(args);
+		if (basename(path) === "SKILL.md") return `🧩 加载技能：${basename(dirname(path))}${range}`;
+		if (/^(?:AGENTS(?:\.override)?|CLAUDE)\.md$/i.test(basename(path)))
+			return `📖 读取项目指令：${shortenPath(path)}${range}`;
+		if (basename(path).toLowerCase() === "readme.md") return `📚 读取文档：${shortenPath(path)}${range}`;
+		return `📖 读取文件：${shortenPath(path) || "..."}${range}`;
+	}
+	if (name === "write") return `✏️ 写入文件：${shortenPath(path) || "..."}`;
+	if (name === "edit") return `✏️ 编辑文件：${shortenPath(path) || "..."}`;
+	if (name === "grep") {
+		const pattern = stringArg(args, "pattern");
+		return `🔍 搜索代码：${compact(pattern || "...")}${path ? ` · ${shortenPath(path)}` : ""}`;
+	}
+	if (name === "find") {
+		return `🔍 查找文件：${compact(stringArg(args, "pattern") || "...")}${path ? ` · ${shortenPath(path)}` : ""}`;
+	}
+	if (name === "ls") return `📂 查看目录：${shortenPath(path) || "."}`;
+	if (name.includes("image") || name.includes("screenshot"))
+		return `🧐 查看图片：${shortenPath(path) || compact(stringArg(args, "url")) || label}`;
+	const query = stringArg(args, "query", "q", "search_query");
+	if (query && (name.includes("search") || name.includes("tavily"))) return `🔍 网络搜索：${compact(query)}`;
+	if (name === "spine_open") return `🌱 创建任务节点：${compact(stringArg(args, "goal") || "...")}`;
+	if (name === "spine_close") return "🌿 关闭任务节点";
+	if (name === "spine_next") return `🌱 切换任务节点：${compact(stringArg(args, "goal") || "...")}`;
+	if (name === "spine_trim") return "✂️ 裁剪工具结果";
+	if (name === "spine_spawn") {
+		const tasks =
+			args && typeof args === "object" && !Array.isArray(args) ? (args as Record<string, unknown>).tasks : null;
+		return `🌳 并行执行 ${Array.isArray(tasks) ? tasks.length : "多个"} 个任务分支`;
+	}
+	if (name.includes("ask") && name.includes("user")) return "❓ 请求用户选择";
+	return undefined;
+}
 
 export interface ToolExecutionOptions {
 	showImages?: boolean;
@@ -27,6 +118,8 @@ export interface ToolExecutionOptions {
 export class ToolExecutionComponent extends Container {
 	private contentBox: Box;
 	private contentText: Text;
+	private summaryBox: Box;
+	private summaryText: Text;
 	private selfRenderContainer: Container;
 	private callRendererComponent?: Component;
 	private resultRendererComponent?: Component;
@@ -81,6 +174,9 @@ export class ToolExecutionComponent extends Container {
 		// contentText is reserved for generic fallback rendering when no tool definition exists.
 		this.contentBox = new Box(1, 1, (text: string) => theme.bg("toolPendingBg", text));
 		this.contentText = new Text("", 1, 1, (text: string) => theme.bg("toolPendingBg", text));
+		this.summaryBox = new Box(1, 0, (text: string) => theme.bg("toolPendingBg", text));
+		this.summaryText = new Text("", 0, 0);
+		this.summaryBox.addChild(this.summaryText);
 		this.selfRenderContainer = new Container();
 
 		if (this.hasRendererDefinition()) {
@@ -244,6 +340,26 @@ export class ToolExecutionComponent extends Container {
 		if (this.hideComponent) {
 			return [];
 		}
+		if (!this.expanded) {
+			const label = this.toolDefinition?.label ?? this.builtInToolDefinition?.label ?? this.toolName;
+			let summary = summarizeTool(this.toolName, label, this.args);
+			if (summary) {
+				const bgFn = this.isPartial
+					? (text: string) => theme.bg("toolPendingBg", text)
+					: this.result?.isError
+						? (text: string) => theme.bg("toolErrorBg", text)
+						: (text: string) => theme.bg("toolSuccessBg", text);
+				if (this.result?.isError) {
+					const error = compact(this.getTextOutput().split("\n")[0] ?? "", 48);
+					summary = `❌ ${summary}${error ? ` — ${error}` : ""}`;
+				}
+				this.summaryBox.setBgFn(bgFn);
+				this.summaryText.setText(
+					theme.fg("toolTitle", theme.bold(truncateToWidth(summary, Math.max(1, width - 2), "..."))),
+				);
+				return ["", ...this.summaryBox.render(width)];
+			}
+		}
 
 		if (this.hasRendererDefinition() && this.getRenderShell() === "self") {
 			const contentLines = this.selfRenderContainer.render(width);
@@ -269,24 +385,15 @@ export class ToolExecutionComponent extends Container {
 			return lines;
 		}
 
-		return this.compactLines(super.render(width), width);
-	}
-
-	private compactLines(lines: string[], width: number): string[] {
-		if (this.expanded || lines.length <= COLLAPSED_TOOL_MAX_LINES) return lines;
-		const hint = `${theme.fg("muted", "...")} ${keyHint("app.tools.expand", "to expand")}`;
-		return [...lines.slice(0, COLLAPSED_TOOL_MAX_LINES), truncateToWidth(hint, width, "...")];
+		return super.render(width);
 	}
 
 	private updateDisplay(): void {
-		const bgFn =
-			!this.expanded && !this.result?.isError
-				? (text: string) => text
-				: this.isPartial
-					? (text: string) => theme.bg("toolPendingBg", text)
-					: this.result?.isError
-						? (text: string) => theme.bg("toolErrorBg", text)
-						: (text: string) => theme.bg("toolSuccessBg", text);
+		const bgFn = this.isPartial
+			? (text: string) => theme.bg("toolPendingBg", text)
+			: this.result?.isError
+				? (text: string) => theme.bg("toolErrorBg", text)
+				: (text: string) => theme.bg("toolSuccessBg", text);
 
 		let hasContent = false;
 		this.hideComponent = false;
