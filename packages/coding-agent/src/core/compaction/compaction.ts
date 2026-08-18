@@ -26,6 +26,17 @@ import {
 	serializeConversation,
 } from "./utils.ts";
 
+function getAnthropicSummarizationFallback(model: Model<any>): readonly { model: string }[] | undefined {
+	if (model.provider !== "anthropic" || model.api !== "anthropic-messages") {
+		return undefined;
+	}
+
+	const allowedFallbackModels = (model as Model<"anthropic-messages">).compat?.allowedFallbackModels;
+	// Use the primary permitted fallback for now. If future Anthropic models expose
+	// broader fallback behavior, this can become a user/config pick or a full chain.
+	return allowedFallbackModels && allowedFallbackModels.length > 0 ? [{ model: allowedFallbackModels[0] }] : undefined;
+}
+
 // ============================================================================
 // File Operation Tracking
 // ============================================================================
@@ -547,6 +558,10 @@ function createSummarizationOptions(
 	sessionId: string | undefined,
 ): SimpleStreamOptions {
 	const options: SimpleStreamOptions = { maxTokens, signal, apiKey, headers, env, sessionId };
+	const refusalFallbacks = getAnthropicSummarizationFallback(model);
+	if (refusalFallbacks) {
+		options.refusalFallbacks = refusalFallbacks;
+	}
 	if (model.reasoning && thinkingLevel && thinkingLevel !== "off") {
 		options.reasoning = thinkingLevel;
 	}
@@ -574,6 +589,7 @@ export async function completeSummarization(
 		...options,
 		cacheRetention: "none",
 		sessionId: options.sessionId ?? uuidv7(),
+		toolChoice: "none",
 	};
 	const produce = async (): Promise<AssistantMessage> =>
 		streamFn
@@ -692,6 +708,9 @@ export async function generateSummaryWithUsage(
 
 	if (response.stopReason === "error") {
 		throw new Error(`Summarization failed: ${response.errorMessage || "Unknown error"}`);
+	}
+	if (response.content.some((block) => block.type === "toolCall")) {
+		throw new Error("Summarization attempted to call a tool");
 	}
 
 	const textContent = contentText(response.content);
@@ -980,6 +999,9 @@ async function generateTurnPrefixSummary(
 
 	if (response.stopReason === "error") {
 		throw new Error(`Turn prefix summarization failed: ${response.errorMessage || "Unknown error"}`);
+	}
+	if (response.content.some((block) => block.type === "toolCall")) {
+		throw new Error("Turn prefix summarization attempted to call a tool");
 	}
 
 	return {
