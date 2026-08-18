@@ -1,4 +1,14 @@
-import { Box, type Component, Container, getCapabilities, Image, Spacer, Text, type TUI } from "@earendil-works/pi-tui";
+import {
+	Box,
+	type Component,
+	Container,
+	getCapabilities,
+	Image,
+	Spacer,
+	Text,
+	type TUI,
+	truncateToWidth,
+} from "@earendil-works/pi-tui";
 import type { ToolDefinition, ToolRenderContext } from "../../../core/extensions/types.ts";
 import { createAllToolDefinitions, type ToolName } from "../../../core/tools/index.ts";
 import { getTextOutput as getRenderedTextOutput } from "../../../core/tools/render-utils.ts";
@@ -7,6 +17,7 @@ import { theme } from "../theme/theme.ts";
 import { keyHint } from "./keybinding-hints.ts";
 
 const FALLBACK_PREVIEW_LINES = 10;
+const COLLAPSED_TOOL_MAX_LINES = 6;
 
 export interface ToolExecutionOptions {
 	showImages?: boolean;
@@ -258,15 +269,24 @@ export class ToolExecutionComponent extends Container {
 			return lines;
 		}
 
-		return super.render(width);
+		return this.compactLines(super.render(width), width);
+	}
+
+	private compactLines(lines: string[], width: number): string[] {
+		if (this.expanded || lines.length <= COLLAPSED_TOOL_MAX_LINES) return lines;
+		const hint = `${theme.fg("muted", "...")} ${keyHint("app.tools.expand", "to expand")}`;
+		return [...lines.slice(0, COLLAPSED_TOOL_MAX_LINES), truncateToWidth(hint, width, "...")];
 	}
 
 	private updateDisplay(): void {
-		const bgFn = this.isPartial
-			? (text: string) => theme.bg("toolPendingBg", text)
-			: this.result?.isError
-				? (text: string) => theme.bg("toolErrorBg", text)
-				: (text: string) => theme.bg("toolSuccessBg", text);
+		const bgFn =
+			!this.expanded && !this.result?.isError
+				? (text: string) => text
+				: this.isPartial
+					? (text: string) => theme.bg("toolPendingBg", text)
+					: this.result?.isError
+						? (text: string) => theme.bg("toolErrorBg", text)
+						: (text: string) => theme.bg("toolSuccessBg", text);
 
 		let hasContent = false;
 		this.hideComponent = false;

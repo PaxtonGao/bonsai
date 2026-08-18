@@ -203,6 +203,7 @@ export interface BashToolOptions {
 }
 
 const BASH_PREVIEW_LINES = 5;
+const BASH_COMMAND_PREVIEW_CHARS = 160;
 const BASH_UPDATE_THROTTLE_MS = 100;
 
 type BashRenderState = {
@@ -229,12 +230,19 @@ function formatDuration(ms: number): string {
 	return `${(ms / 1000).toFixed(1)}s`;
 }
 
-function formatBashCall(args: { command?: string; timeout?: number } | undefined): string {
+function formatBashCall(args: { command?: string; timeout?: number } | undefined, expanded: boolean): string {
 	const command = str(args?.command);
 	const timeout = args?.timeout as number | undefined;
 	const timeoutSuffix = timeout ? theme.fg("muted", ` (timeout ${timeout}s)`) : "";
-	const commandDisplay = command === null ? invalidArgText(theme) : command ? command : theme.fg("toolOutput", "...");
-	return theme.fg("toolTitle", theme.bold(`$ ${commandDisplay}`)) + timeoutSuffix;
+	const commandDisplay =
+		command === null
+			? invalidArgText(theme)
+			: command
+				? !expanded && command.length > BASH_COMMAND_PREVIEW_CHARS
+					? `${command.slice(0, BASH_COMMAND_PREVIEW_CHARS - 3)}...`
+					: command
+				: theme.fg("toolOutput", "...");
+	return theme.fg("toolTitle", theme.bold(`bash $ ${commandDisplay}`)) + timeoutSuffix;
 }
 
 function rebuildBashResultRenderComponent(
@@ -468,7 +476,7 @@ export function createBashToolDefinition(
 				state.endedAt = undefined;
 			}
 			const text = (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
-			text.setText(formatBashCall(args));
+			text.setText(formatBashCall(args, context.expanded));
 			return text;
 		},
 		renderResult(result, options, _theme, context) {

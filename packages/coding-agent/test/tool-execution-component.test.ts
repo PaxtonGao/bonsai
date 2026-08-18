@@ -191,6 +191,41 @@ describe("ToolExecutionComponent parity", () => {
 		expect(rendered).not.toContain("[Showing lines 2001-4000 of 4000. Full output:");
 	});
 
+	test("keeps collapsed tool rows compact and action-first", () => {
+		const tool = createBashToolDefinition(process.cwd());
+		const command = `node --input-type=module -e "${"check dependency; ".repeat(15)}"`;
+		const component = new ToolExecutionComponent(
+			"bash",
+			"tool-compact-bash",
+			{ command },
+			{},
+			tool,
+			createFakeTui(),
+			process.cwd(),
+		);
+		component.updateResult(
+			{
+				content: [{ type: "text", text: Array.from({ length: 20 }, (_, index) => `line ${index + 1}`).join("\n") }],
+				details: undefined,
+				isError: false,
+			},
+			false,
+		);
+
+		const collapsed = component.render(100);
+		const collapsedText = stripAnsi(collapsed.join("\n"));
+		expect(collapsedText).toContain("bash $");
+		expect(collapsed).toHaveLength(7);
+		expect(collapsed.join("\n")).not.toContain(theme.getBgAnsi("toolSuccessBg"));
+
+		component.setExpanded(true);
+		const expanded = component.render(100);
+		expect(stripAnsi(expanded.join("\n")).match(/check dependency;/g)?.length ?? 0).toBeGreaterThan(
+			collapsedText.match(/check dependency;/g)?.length ?? 0,
+		);
+		expect(expanded.join("\n")).toContain(theme.getBgAnsi("toolSuccessBg"));
+	});
+
 	test("does not duplicate built-in headers when passed the active built-in definition", () => {
 		const component = new ToolExecutionComponent(
 			"read",
@@ -363,9 +398,8 @@ describe("ToolExecutionComponent parity", () => {
 
 		const collapsed = stripAnsi(component.render(120).join("\n"));
 		expect(collapsed).toContain("custom_tool");
-		expect(collapsed).toContain("line-10");
-		expect(collapsed).not.toContain("line-11");
-		expect(collapsed).toContain("5 more lines");
+		expect(collapsed).toContain("line-3");
+		expect(collapsed).not.toContain("line-4");
 		expect(collapsed).toContain("to expand");
 
 		component.setExpanded(true);
