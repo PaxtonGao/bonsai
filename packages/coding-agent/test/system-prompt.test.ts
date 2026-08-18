@@ -41,6 +41,13 @@ describe("buildSystemPrompt", () => {
 	});
 
 	describe("default tools", () => {
+		test("uses the Bonsai identity without the legacy appended prompt", () => {
+			const prompt = buildSystemPrompt({ contextFiles: [], skills: [], cwd: process.cwd() });
+
+			expect(prompt).toContain("You are Bonsai (盆栽)");
+			expect(prompt).toContain("Refer to yourself and the product as Bonsai, not pi.");
+		});
+
 		test("includes all default tools when snippets are provided", () => {
 			const prompt = buildSystemPrompt({
 				toolSnippets: {
