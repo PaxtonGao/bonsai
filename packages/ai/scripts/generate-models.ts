@@ -2316,6 +2316,11 @@ async function generateModels() {
 
 	// Temporary overrides until upstream model metadata is corrected.
 	for (const candidate of allModels) {
+		if (candidate.provider === "xai") {
+			candidate.api = "openai-responses";
+			candidate.baseUrl = "https://api.x.ai/v1";
+			candidate.compat = { ...XAI_RESPONSES_COMPAT };
+		}
 		if (candidate.provider === "github-copilot" && GITHUB_COPILOT_EXTENDED_CONTEXT_MODELS.has(candidate.id)) {
 			candidate.contextWindow = 1000000;
 		}

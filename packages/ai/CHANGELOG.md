@@ -13,6 +13,7 @@
 
 ### Fixed
 
+- Fixed generated direct xAI models, including Grok 4.6, reverting to the Completions API when they were sourced outside models.dev instead of using the xAI Responses provider.
 - Fixed Azure OpenAI Responses ignoring `toolChoice` in provider-specific stream requests.
 - Added `deepseek-v4-pro-0813` to the Qwen Token Plan Individual catalog ([#8194](https://github.com/earendil-works/pi/issues/8194)).
 - Fixed Amazon Bedrock `after_provider_response`/`onResponse` to forward the raw response headers instead of only the synthesized request id header ([#8234](https://github.com/earendil-works/pi/issues/8234)).
