@@ -38,8 +38,8 @@ export function createSpineJitTools(): ToolDefinition[] {
 	const open = defineTool({
 		name: "spine_open",
 		label: "Open task",
-		description: loadPromptTemplate("spine-open-description"),
-		promptSnippet: loadPromptTemplate("spine-open"),
+		description: loadPromptTemplate("tools/spine-open-description"),
+		promptSnippet: loadPromptTemplate("tools/spine-open"),
 		parameters: Type.Object({ goal: Type.String({ minLength: 1 }) }, { additionalProperties: false }),
 		executionMode: "sequential",
 		execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {
@@ -51,8 +51,8 @@ export function createSpineJitTools(): ToolDefinition[] {
 	const close = defineTool({
 		name: "spine_close",
 		label: "Close task",
-		description: loadPromptTemplate("spine-close-description"),
-		promptSnippet: loadPromptTemplate("spine-close"),
+		description: loadPromptTemplate("tools/spine-close-description"),
+		promptSnippet: loadPromptTemplate("tools/spine-close"),
 		parameters: Type.Object({ memory: Type.String({ minLength: 1 }) }, { additionalProperties: false }),
 		executionMode: "sequential",
 		execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {
@@ -64,8 +64,8 @@ export function createSpineJitTools(): ToolDefinition[] {
 	const next = defineTool({
 		name: "spine_next",
 		label: "Next task",
-		description: loadPromptTemplate("spine-next-description"),
-		promptSnippet: loadPromptTemplate("spine-next"),
+		description: loadPromptTemplate("tools/spine-next-description"),
+		promptSnippet: loadPromptTemplate("tools/spine-next"),
 		parameters: Type.Object(
 			{ goal: Type.String({ minLength: 1 }), memory: Type.String({ minLength: 1 }) },
 			{ additionalProperties: false },
@@ -81,8 +81,8 @@ export function createSpineJitTools(): ToolDefinition[] {
 	const trim = defineTool({
 		name: "spine_trim",
 		label: "Trim result",
-		description: loadPromptTemplate("spine-trim-description"),
-		promptSnippet: loadPromptTemplate("spine-trim"),
+		description: loadPromptTemplate("tools/spine-trim-description"),
+		promptSnippet: loadPromptTemplate("tools/spine-trim"),
 		parameters: Type.Object(
 			{
 				TRIM_ID: Type.String({ minLength: 1 }),

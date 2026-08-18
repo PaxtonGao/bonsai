@@ -46,10 +46,10 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 
 	const projectContext =
 		contextFiles.length > 0
-			? `\n\n${loadPromptTemplate("project-context", {
+			? `\n\n${loadPromptTemplate("internal/project-context", {
 					BONSAI_PROJECT_INSTRUCTIONS: contextFiles
 						.map(({ path: filePath, content }) =>
-							loadPromptTemplate("project-instruction", {
+							loadPromptTemplate("internal/project-instruction", {
 								BONSAI_PROJECT_PATH: filePath,
 								BONSAI_PROJECT_CONTENT: content,
 							}),
@@ -60,7 +60,7 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 
 	if (customPrompt) {
 		const customPromptHasRead = !selectedTools || selectedTools.includes("read");
-		return loadPromptTemplate("custom-system", {
+		return loadPromptTemplate("internal/custom-system", {
 			BONSAI_CUSTOM_SYSTEM: customPrompt,
 			BONSAI_APPEND_SYSTEM: appendSection,
 			BONSAI_PROJECT_CONTEXT: projectContext,
@@ -116,7 +116,7 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 
 	const guidelines = guidelinesList.map((g) => `- ${g}`).join("\n");
 
-	return loadPromptTemplate("default-system", {
+	return loadPromptTemplate("agents/main", {
 		BONSAI_TOOLS: toolsList,
 		BONSAI_GUIDELINES: guidelines,
 		BONSAI_README_PATH: readmePath,

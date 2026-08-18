@@ -9,6 +9,7 @@
 ### Changed
 
 - Consolidated the Bonsai runtime identity into the bundled system prompt instead of appending a project-local identity prompt from the launcher.
+- Organized bundled Bonsai prompts into agent, tool, and internal template directories.
 
 ### Fixed
 

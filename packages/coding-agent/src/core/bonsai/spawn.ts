@@ -28,7 +28,7 @@ const CHILD_TEARDOWN_DEADLINE_MS = 5_000;
 const CHILD_EXECUTION_DEADLINE_MS = 120_000;
 
 function taskEnvelope(task: SpawnTask, tasks: SpawnTask[]): string {
-	return loadPromptTemplate("spine-child-envelope", {
+	return loadPromptTemplate("agents/spine-child", {
 		BONSAI_TASK_SUMMARY: task.summary,
 		BONSAI_PEER_TASKS: tasks
 			.filter((peer) => peer !== task)
@@ -250,8 +250,8 @@ export function createSpineSpawnTool(getRuntime: () => SpawnRuntime | undefined)
 	return defineTool({
 		name: "spine_spawn",
 		label: "Spawn tasks",
-		description: loadPromptTemplate("spine-spawn-description"),
-		promptSnippet: loadPromptTemplate("spine-spawn"),
+		description: loadPromptTemplate("tools/spine-spawn-description"),
+		promptSnippet: loadPromptTemplate("tools/spine-spawn"),
 		parameters: Type.Object(
 			{
 				tasks: Type.Array(
