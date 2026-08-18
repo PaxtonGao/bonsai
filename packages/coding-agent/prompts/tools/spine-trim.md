@@ -1,1 +1,1 @@
-Trim an oversized adjacent tool result by its TRIM_ID.
+Use spine_trim only on a tagged result in the immediately previous completed tool batch. Prefer slice to retain the smallest useful head, tail, or anchor window. Use snip only after continuation-relevant facts have been preserved elsewhere. A TRIM_ID expires after the next assistant tool request; do not retry an expired or rejected id.

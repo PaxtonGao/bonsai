@@ -256,10 +256,23 @@ export function createSpineSpawnTool(getRuntime: () => SpawnRuntime | undefined)
 			{
 				tasks: Type.Array(
 					Type.Object(
-						{ summary: Type.String({ minLength: 1 }), prompt: Type.String({ minLength: 1 }) },
+						{
+							summary: Type.String({
+								minLength: 1,
+								description: loadPromptTemplate("tools/fields/spawn-summary"),
+							}),
+							prompt: Type.String({
+								minLength: 1,
+								description: loadPromptTemplate("tools/fields/spawn-prompt"),
+							}),
+						},
 						{ additionalProperties: false },
 					),
-					{ minItems: 2, maxItems: 4 },
+					{
+						minItems: 2,
+						maxItems: 4,
+						description: loadPromptTemplate("tools/fields/spawn-tasks"),
+					},
 				),
 			},
 			{ additionalProperties: false },

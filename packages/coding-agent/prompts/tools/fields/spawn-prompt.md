@@ -1,0 +1,1 @@
+Complete initial branch assignment with an explicit scope, evidence boundary, and completion predicate. When branches need coordination, include the same task-local `Shared blackboard: <path>` line in every branch prompt.

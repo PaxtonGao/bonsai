@@ -1,1 +1,1 @@
-Open a focused child task.
+Use spine_open as soon as a focused body of work has clear context ownership and an independent lifecycle. The child must own a concrete, independently completable goal whose detailed working context can later be replaced by compact memory. Keep exact context needed by several branches in their lowest common ancestor; do not open nodes merely for semantic grouping or progress reporting.

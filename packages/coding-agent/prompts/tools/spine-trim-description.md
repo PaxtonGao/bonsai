@@ -1,1 +1,1 @@
-Trim the oversized result from the immediately previous completed tool group.
+Conservatively trim one tagged tool-result projection without changing the Bonsai tree or creating memory. A TRIM_ID is valid only for the immediately preceding tool-result batch and expires after the next assistant tool request; after a miss, do not retry it. Use slice to retain needed evidence, use snip only after useful facts are preserved, and otherwise leave the result unchanged.

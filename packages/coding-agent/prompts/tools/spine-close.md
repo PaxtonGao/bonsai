@@ -1,1 +1,1 @@
-Close the current task with durable memory.
+Use spine_close only when the current node's result is stable and later work no longer needs its full local working context. Write memory that lets the parent continue without broadly reconstructing the closed node's work. Close one level at a time when returning to a higher ancestor.

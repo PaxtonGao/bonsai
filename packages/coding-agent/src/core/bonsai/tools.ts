@@ -35,12 +35,21 @@ function success(message: string) {
 }
 
 export function createSpineJitTools(): ToolDefinition[] {
+	const nodeMemoryDescription = loadPromptTemplate("tools/fields/node-memory");
 	const open = defineTool({
 		name: "spine_open",
 		label: "Open task",
 		description: loadPromptTemplate("tools/spine-open-description"),
 		promptSnippet: loadPromptTemplate("tools/spine-open"),
-		parameters: Type.Object({ goal: Type.String({ minLength: 1 }) }, { additionalProperties: false }),
+		parameters: Type.Object(
+			{
+				goal: Type.String({
+					minLength: 1,
+					description: loadPromptTemplate("tools/fields/open-goal"),
+				}),
+			},
+			{ additionalProperties: false },
+		),
 		executionMode: "sequential",
 		execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {
 			if (!params.goal.trim()) throw new Error("spine.open requires a non-empty goal");
@@ -53,7 +62,10 @@ export function createSpineJitTools(): ToolDefinition[] {
 		label: "Close task",
 		description: loadPromptTemplate("tools/spine-close-description"),
 		promptSnippet: loadPromptTemplate("tools/spine-close"),
-		parameters: Type.Object({ memory: Type.String({ minLength: 1 }) }, { additionalProperties: false }),
+		parameters: Type.Object(
+			{ memory: Type.String({ minLength: 1, description: nodeMemoryDescription }) },
+			{ additionalProperties: false },
+		),
 		executionMode: "sequential",
 		execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {
 			if (!params.memory.trim()) throw new Error("spine.close requires non-empty memory");
@@ -67,7 +79,13 @@ export function createSpineJitTools(): ToolDefinition[] {
 		description: loadPromptTemplate("tools/spine-next-description"),
 		promptSnippet: loadPromptTemplate("tools/spine-next"),
 		parameters: Type.Object(
-			{ goal: Type.String({ minLength: 1 }), memory: Type.String({ minLength: 1 }) },
+			{
+				goal: Type.String({
+					minLength: 1,
+					description: loadPromptTemplate("tools/fields/next-goal"),
+				}),
+				memory: Type.String({ minLength: 1, description: nodeMemoryDescription }),
+			},
 			{ additionalProperties: false },
 		),
 		executionMode: "sequential",
@@ -85,13 +103,23 @@ export function createSpineJitTools(): ToolDefinition[] {
 		promptSnippet: loadPromptTemplate("tools/spine-trim"),
 		parameters: Type.Object(
 			{
-				TRIM_ID: Type.String({ minLength: 1 }),
-				op: Type.String({ enum: ["snip", "slice"] }),
-				head: Type.Optional(Type.Integer({ minimum: 0 })),
-				tail: Type.Optional(Type.Integer({ minimum: 0 })),
-				anchor: Type.Optional(Type.String({ minLength: 1 })),
-				preceding: Type.Optional(Type.Integer({ minimum: 0 })),
-				following: Type.Optional(Type.Integer({ minimum: 0 })),
+				TRIM_ID: Type.String({ minLength: 1, description: loadPromptTemplate("tools/fields/trim-id") }),
+				op: Type.String({ enum: ["snip", "slice"], description: loadPromptTemplate("tools/fields/trim-op") }),
+				head: Type.Optional(
+					Type.Integer({ minimum: 0, description: loadPromptTemplate("tools/fields/trim-head") }),
+				),
+				tail: Type.Optional(
+					Type.Integer({ minimum: 0, description: loadPromptTemplate("tools/fields/trim-tail") }),
+				),
+				anchor: Type.Optional(
+					Type.String({ minLength: 1, description: loadPromptTemplate("tools/fields/trim-anchor") }),
+				),
+				preceding: Type.Optional(
+					Type.Integer({ minimum: 0, description: loadPromptTemplate("tools/fields/trim-preceding") }),
+				),
+				following: Type.Optional(
+					Type.Integer({ minimum: 0, description: loadPromptTemplate("tools/fields/trim-following") }),
+				),
 			},
 			{ additionalProperties: false },
 		),

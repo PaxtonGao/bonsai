@@ -1,1 +1,1 @@
-Close the current task and enter its next sibling.
+Use spine_next when the current node is ready to finalize and the next work belongs to a true sibling under the same parent. Put all finalized-node continuation state in memory and give the sibling its own independently completable goal. To return to a higher ancestor, use spine_close one level at a time instead.

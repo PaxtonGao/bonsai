@@ -1,1 +1,1 @@
-Close the current Bonsai task and enter a new sibling task atomically.
+Finalize the current node once its owned result is complete or precisely bounded and continuation can proceed from compact memory and inherited context without its full local working context, then enter a true sibling under the same parent. The sibling owns one independently completable goal and the local working context needed to achieve it. Co-issued ordinary tools belong to the sibling; the transition applies to the current node's prior ReAct history.
