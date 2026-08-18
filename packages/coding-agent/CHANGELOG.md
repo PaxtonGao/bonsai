@@ -5,6 +5,7 @@
 ### Added
 
 - Added editable Markdown templates for Bonsai system prompts, project context, SpineSpawn child instructions, and Bonsai tool guidance.
+- Added YAML-defined Bonsai agent profiles and bounded in-process `delegate` sessions for explorer, reviewer, and worker roles.
 
 ### Changed
 
@@ -12,9 +13,11 @@
 - Organized bundled Bonsai prompts into agent, tool, and internal template directories.
 - Expanded Bonsai tool guidance and parameter descriptions to preserve Spine context-ownership, lifecycle, memory, trimming, and spawn contracts.
 - Rendered recognized tools as one-line colored, deterministic action summaries while preserving complete expanded output and custom tool renderers.
+- Reworked the Bonsai welcome screen into a responsive bordered layout with compact Skills and Extensions panels and inline command hints.
 
 ### Fixed
 
+- Fixed the Bonsai launcher prepending its ask-user extension before management commands, which prevented update, auth, config, and package subcommands from being recognized.
 - Fixed the subagent example repeatedly prompting before running project-local agents in trusted repositories ([#8261](https://github.com/earendil-works/pi/issues/8261)).
 - Added `session_compact_failed` extension events so compaction failures and aborts expose their reason, retry state, source, and error message to handlers ([#8175](https://github.com/earendil-works/pi/issues/8175)).
 - Fixed npm package update checks treating older registry versions as available updates, preventing `pi update` from downgrading already-newer installed packages ([#8226](https://github.com/earendil-works/pi/issues/8226)).

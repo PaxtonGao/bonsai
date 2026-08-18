@@ -11,6 +11,12 @@ SCRIPT_DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 ASK_USER_EXTENSION="$REPO_ROOT/.pi/npm/node_modules/@juicesharp/rpiv-ask-user-question/index.ts"
 
+case "${1:-}" in
+	auth | install | remove | uninstall | update | list | config)
+		exec "$REPO_ROOT/pi-test.sh" "$@"
+		;;
+esac
+
 exec "$REPO_ROOT/pi-test.sh" \
 	--extension "$ASK_USER_EXTENSION" \
 	"$@"

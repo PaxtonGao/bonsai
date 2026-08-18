@@ -17,6 +17,7 @@ import type {
 import { registerFauxProvider, streamSimple } from "@earendil-works/pi-ai/compat";
 import { AgentSession, type AgentSessionEvent } from "../../src/core/agent-session.ts";
 import { AuthStorage } from "../../src/core/auth-storage.ts";
+import type { DelegateRuntime } from "../../src/core/bonsai/delegate.ts";
 import { createBonsaiIntegration } from "../../src/core/bonsai/integration.ts";
 import type { SpawnRuntime } from "../../src/core/bonsai/spawn.ts";
 import type { ExtensionRunner } from "../../src/core/extensions/index.ts";
@@ -64,6 +65,7 @@ export function getAssistantTexts(harness: Harness): string[] {
 
 export interface HarnessOptions {
 	bonsaiChildExecutionDeadlineMs?: number;
+	bonsaiDelegateExecutionDeadlineMs?: number;
 	models?: FauxModelDefinition[];
 	settings?: Partial<Settings>;
 	systemPrompt?: string;
@@ -114,7 +116,12 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
 
 	const sessionManager = SessionManager.inMemory();
 	let spawnRuntime: SpawnRuntime | undefined;
-	const bonsai = createBonsaiIntegration(sessionManager, () => spawnRuntime);
+	let delegateRuntime: DelegateRuntime | undefined;
+	const bonsai = createBonsaiIntegration(
+		sessionManager,
+		() => spawnRuntime,
+		() => delegateRuntime,
+	);
 	const settingsManager = SettingsManager.inMemory(options.settings);
 
 	const authStorage = AuthStorage.inMemory();
@@ -203,6 +210,18 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
 		parent: session,
 		getPreResponseContext: bonsai.getPreResponseContext,
 		childExecutionDeadlineMs: options.bonsaiChildExecutionDeadlineMs,
+		services: {
+			cwd: tempDir,
+			agentDir: tempDir,
+			modelRuntime: getModelRuntime(modelRegistry),
+			settingsManager,
+			resourceLoader,
+			diagnostics: [],
+		},
+	};
+	delegateRuntime = {
+		parent: session,
+		childExecutionDeadlineMs: options.bonsaiDelegateExecutionDeadlineMs,
 		services: {
 			cwd: tempDir,
 			agentDir: tempDir,

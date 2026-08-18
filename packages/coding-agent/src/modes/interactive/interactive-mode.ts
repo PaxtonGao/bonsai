@@ -112,6 +112,7 @@ import { checkForNewPiVersion, type LatestPiRelease } from "../../utils/version-
 import { ArminComponent } from "./components/armin.ts";
 import { AssistantMessageComponent } from "./components/assistant-message.ts";
 import { BashExecutionComponent } from "./components/bash-execution.ts";
+import { BonsaiWelcomeComponent } from "./components/bonsai-welcome.ts";
 import { BorderedLoader } from "./components/bordered-loader.ts";
 import { BranchSummaryMessageComponent } from "./components/branch-summary-message.ts";
 import { CompactionSummaryMessageComponent } from "./components/compaction-summary-message.ts";
@@ -521,6 +522,7 @@ export class InteractiveMode {
 
 	// Built-in header (logo + keybinding hints + changelog)
 	private builtInHeader: Component | undefined = undefined;
+	private bonsaiWelcomeHeader: BonsaiWelcomeComponent | undefined = undefined;
 
 	// Custom header from extension (undefined = use built-in header)
 	private customHeader: (Component & { dispose?(): void }) | undefined = undefined;
@@ -925,19 +927,6 @@ export class InteractiveMode {
 
 		// Add header with keybindings from config (unless silenced)
 		if (this.options.verbose || !this.settingsManager.getQuietStartup()) {
-			const bonsaiArt = theme.fg(
-				"accent",
-				[
-					"        \\ | /",
-					"      .-.( ).-.",
-					"        (___)",
-					"     .-`-----`-.",
-					"    /  BONSAI  \\",
-					"   /____________\\",
-				].join("\n"),
-			);
-			const logo = theme.bold(theme.fg("accent", APP_NAME)) + theme.fg("dim", ` v${this.version}`);
-
 			// Build startup instructions using keybinding hint helpers
 			const hint = (keybinding: AppKeybinding, description: string) => keyHint(keybinding, description);
 
@@ -961,26 +950,30 @@ export class InteractiveMode {
 				hint("app.message.dequeue", "to edit all queued messages"),
 				hint("app.clipboard.pasteImage", "to paste image (with text fallback)"),
 				rawKeyHint("drop files", "to attach"),
-			].join("\n");
-			const compactInstructions = [
-				hint("app.interrupt", "interrupt"),
-				rawKeyHint(`${keyText("app.clear")}/${keyText("app.exit")}`, "clear/exit"),
-				rawKeyHint("/", "commands"),
-				rawKeyHint("!", "bash"),
-				hint("app.tools.expand", "more"),
-			].join(theme.fg("muted", " · "));
-			const compactOnboarding = theme.fg(
-				"dim",
-				`Press ${keyText("app.tools.expand")} to show full startup help and loaded resources.`,
-			);
-			const onboarding = theme.fg("dim", "Bonsai can explain its features and help you work with the task tree.");
-			this.builtInHeader = new ExpandableText(
-				() => `${bonsaiArt}\n\n${logo}\n${compactInstructions}\n${compactOnboarding}\n\n${onboarding}`,
-				() => `${bonsaiArt}\n\n${logo}\n${expandedInstructions}\n\n${onboarding}`,
-				this.getStartupExpansionState(),
-				1,
-				0,
-			);
+			];
+			const compactInstructions = () =>
+				[
+					hint("app.interrupt", "interrupt"),
+					rawKeyHint(`${keyText("app.clear")}/${keyText("app.exit")}`, "clear/exit"),
+					rawKeyHint("/", "commands"),
+					rawKeyHint("@", "files"),
+					rawKeyHint("!", "bash"),
+					hint("app.tools.expand", "more"),
+				].join(theme.fg("muted", " · "));
+			const loadedExtensions = this.session.resourceLoader
+				.getExtensions()
+				.extensions.filter((extension) => !extension.hidden)
+				.map((extension) => ({ path: extension.path, sourceInfo: extension.sourceInfo }));
+			this.bonsaiWelcomeHeader = new BonsaiWelcomeComponent({
+				version: this.version,
+				skills: this.session.resourceLoader.getSkills().skills.map((skill) => skill.name),
+				extensions: this.getCompactExtensionLabels(loadedExtensions),
+				getCompactHints: compactInstructions,
+				getExpandedHints: () => expandedInstructions.join(theme.fg("muted", " · ")),
+				getExpandKey: () => keyText("app.tools.expand"),
+				expanded: this.getStartupExpansionState(),
+			});
+			this.builtInHeader = this.bonsaiWelcomeHeader;
 
 			// Setup UI layout
 			this.headerContainer.addChild(new Spacer(1));
@@ -1688,6 +1681,10 @@ export class InteractiveMode {
 					path: extension.path,
 					sourceInfo: extension.sourceInfo,
 				}));
+		this.bonsaiWelcomeHeader?.setResources(
+			skillsResult.skills.map((skill) => skill.name),
+			this.getCompactExtensionLabels(extensions),
+		);
 		const sourceInfos = new Map<string, SourceInfo>();
 		for (const extension of extensions) {
 			if (extension.sourceInfo) {
@@ -1730,7 +1727,7 @@ export class InteractiveMode {
 			}
 
 			const skills = skillsResult.skills;
-			if (skills.length > 0) {
+			if (skills.length > 0 && !this.bonsaiWelcomeHeader) {
 				const groups = this.buildScopeGroups(
 					skills.map((skill) => ({ path: skill.filePath, sourceInfo: skill.sourceInfo })),
 				);
@@ -1762,7 +1759,7 @@ export class InteractiveMode {
 				addLoadedSection("Prompts", promptCompactList, templateList);
 			}
 
-			if (extensions.length > 0) {
+			if (extensions.length > 0 && !this.bonsaiWelcomeHeader) {
 				const groups = this.buildScopeGroups(extensions);
 				const extList = this.formatScopeGroups(groups, {
 					formatPath: (item) => this.formatExtensionDisplayPath(item.path),

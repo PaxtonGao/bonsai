@@ -1,1 +1,0 @@
-Finalize the current node once its owned result is complete or precisely bounded and continuation can proceed from compact memory and inherited context without its full local working context, then return to its immediate parent. Root epochs cannot be closed. Co-issued ordinary tools belong to the parent; the transition applies to the current node's prior ReAct history.

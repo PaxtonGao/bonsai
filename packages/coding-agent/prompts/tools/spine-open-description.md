@@ -1,1 +1,0 @@
-Enter a direct child under the current Bonsai cursor. The child owns one independently completable goal and the local working context needed to achieve it. Co-issued ordinary tools belong to the child; the transition applies to the current node's prior ReAct history.

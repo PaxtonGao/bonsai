@@ -5,6 +5,13 @@ import { getAgentDir } from "../config.ts";
 import { resolvePath } from "../utils/paths.ts";
 import { AgentSession } from "./agent-session.ts";
 import { formatNoModelsAvailableMessage } from "./auth-guidance.ts";
+import {
+	loadAgentProfile,
+	resolveProfileModels,
+	resolveProfileThinking,
+	resolveProfileTools,
+} from "./bonsai/agent-profile.ts";
+import type { DelegateRuntime } from "./bonsai/delegate.ts";
 import { createBonsaiIntegration } from "./bonsai/integration.ts";
 import type { SpawnRuntime } from "./bonsai/spawn.ts";
 import { DEFAULT_THINKING_LEVEL } from "./defaults.ts";
@@ -242,6 +249,16 @@ export async function createAgentSession(
 		thinkingLevel = settingsManager.getDefaultThinkingLevel() ?? DEFAULT_THINKING_LEVEL;
 	}
 
+	const mainProfile = internal.fixedSystemPrompt ? undefined : loadAgentProfile("main", "main");
+	if (mainProfile) {
+		if (mainProfile.model !== "inherit") {
+			const profileModels = resolveProfileModels(mainProfile, model, modelRuntime);
+			if (profileModels.length === 0) throw new Error("Main agent profile has no available model");
+			model = profileModels[0];
+		}
+		if (model) thinkingLevel = resolveProfileThinking(mainProfile, thinkingLevel, model);
+	}
+
 	// Clamp to model capabilities
 	if (!model) {
 		thinkingLevel = "off";
@@ -299,7 +316,12 @@ export async function createAgentSession(
 
 	const extensionRunnerRef: { current?: ExtensionRunner } = {};
 	let spawnRuntime: SpawnRuntime | undefined;
-	const bonsai = createBonsaiIntegration(sessionManager, () => spawnRuntime);
+	let delegateRuntime: DelegateRuntime | undefined;
+	const bonsai = createBonsaiIntegration(
+		sessionManager,
+		() => spawnRuntime,
+		() => delegateRuntime,
+	);
 
 	agent = new Agent({
 		initialState: {
@@ -405,6 +427,14 @@ export async function createAgentSession(
 		services: { cwd, agentDir, modelRuntime, settingsManager, resourceLoader, diagnostics: [] },
 		getPreResponseContext: bonsai.getPreResponseContext,
 	};
+	delegateRuntime = {
+		parent: session,
+		services: { cwd, agentDir, modelRuntime, settingsManager, resourceLoader, diagnostics: [] },
+	};
+	if (mainProfile && mainProfile.tools !== "inherit") {
+		const permittedToolNames = session.getAllTools().map((tool) => tool.name);
+		session.setActiveToolsByName(resolveProfileTools(mainProfile, permittedToolNames));
+	}
 	const extensionsResult = resourceLoader.getExtensions();
 
 	return {

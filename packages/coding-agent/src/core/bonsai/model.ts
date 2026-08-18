@@ -4,6 +4,7 @@ export type NodeId = number[];
 export type NodeKind = "root" | "task";
 export type NodeStatus = "live" | "opened" | "closed" | "compacted";
 export type SpawnOutcome = "completed" | "errored" | "aborted";
+export type DelegateOutcome = "completed" | "errored" | "aborted";
 
 export interface SpawnTask {
 	summary: string;
@@ -21,6 +22,16 @@ export interface SpawnResult {
 export interface SpawnReceipt {
 	schema: "spine.spawn.result.v1";
 	results: SpawnResult[];
+}
+
+export interface DelegateReceipt {
+	schema: "bonsai.delegate.result.v1";
+	profile: string;
+	outcome: DelegateOutcome;
+	memory_body: string;
+	execution_ref: string;
+	truncated?: true;
+	diagnostic?: string;
 }
 
 export type MemorySlot =
@@ -104,6 +115,7 @@ export type SpineEvent =
 	| { kind: "compact"; boundary: number; replacementHistory: AgentMessage[] };
 
 export const SPAWN_RECEIPT_SCHEMA = "spine.spawn.result.v1";
+export const DELEGATE_RECEIPT_SCHEMA = "bonsai.delegate.result.v1";
 export const TRIM_THRESHOLD_BYTES = 10_000;
 
 export function nodeIdText(id: NodeId): string {

@@ -114,7 +114,7 @@ export default function reapplyMarkers(pi) {
 			childTools.push(context.tools?.map((tool) => tool.name) ?? []);
 			childSystemPrompts.push(context.systemPrompt);
 			childAssignments.push(texts.at(-1) ?? "");
-			return texts.at(-1)?.includes("You are: beta")
+			return context.systemPrompt.includes("You are: beta")
 				? fauxAssistantMessage("", { stopReason: "error", errorMessage: "beta failed" })
 				: fauxAssistantMessage(`memory:${texts.at(-1)}`);
 		};
@@ -156,7 +156,6 @@ export default function reapplyMarkers(pi) {
 		expect(receipt.schema).toBe("spine.spawn.result.v1");
 		expect(receipt.results.map((entry) => entry.ordinal)).toEqual([0, 1]);
 		expect(receipt.results[0]?.memory_body).toContain("inspect alpha");
-		expect(receipt.results[0]?.memory_body).toContain("You are: alpha");
 		expect(receipt.results[0]?.memory_body).not.toContain("Assignment:\ninspect beta");
 		expect(receipt.results[1]).toMatchObject({ outcome: "errored", diagnostic: "beta failed" });
 		expect(new Set(receipt.results.map((entry) => entry.execution_ref)).size).toBe(2);
@@ -166,10 +165,14 @@ export default function reapplyMarkers(pi) {
 		expect(prefixes[0]).toEqual(parentPrefix);
 		expect(prefixes[0]).toContain("parent context marker");
 		expect(parentSystemPrompt).toContain("parent prompt marker");
-		expect(childSystemPrompts).toEqual([parentSystemPrompt, parentSystemPrompt]);
+		expect(childSystemPrompts[0]).toContain("You are: alpha");
+		expect(childSystemPrompts[1]).toContain("You are: beta");
+		expect(childSystemPrompts.every((prompt) => prompt.includes("Do not call spine_spawn."))).toBe(true);
 		expect(childTools.every((names) => !names.includes("spine_spawn"))).toBe(true);
+		expect(childTools.every((names) => !names.includes("delegate"))).toBe(true);
 		expect(childTools.every((names) => names.includes("spine_close"))).toBe(true);
-		expect(childAssignments.every((prompt) => prompt.includes("Do not call spine_spawn."))).toBe(true);
+		expect(childAssignments[0]).toContain("inspect alpha");
+		expect(childAssignments[1]).toContain("inspect beta");
 		expect(parentContext).toContain("<spine_spawn_evidence");
 		expect(parentContext).not.toContain('"memory_body"');
 	});

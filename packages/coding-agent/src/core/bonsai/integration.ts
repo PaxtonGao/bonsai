@@ -1,5 +1,6 @@
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { SessionManager } from "../session-manager.ts";
+import { createDelegateTool, type DelegateRuntime } from "./delegate.ts";
 import { projectSpine } from "./projection.ts";
 import { reduceSpine } from "./reducer.ts";
 import { createSpineSpawnTool, type SpawnRuntime } from "./spawn.ts";
@@ -33,10 +34,15 @@ function assertCompleteToolPairing(messages: AgentMessage[]): void {
 export function createBonsaiIntegration(
 	sessionManager: SessionManager,
 	getSpawnRuntime?: () => SpawnRuntime | undefined,
+	getDelegateRuntime?: () => DelegateRuntime | undefined,
 ) {
 	let preResponseContext: AgentMessage[] = [];
 	return {
-		tools: [...createSpineJitTools(), ...(getSpawnRuntime ? [createSpineSpawnTool(getSpawnRuntime)] : [])],
+		tools: [
+			...createSpineJitTools(),
+			...(getSpawnRuntime ? [createSpineSpawnTool(getSpawnRuntime)] : []),
+			...(getDelegateRuntime ? [createDelegateTool(getDelegateRuntime)] : []),
+		],
 		project(messages: AgentMessage[]) {
 			const entries = sessionManager.getBranch();
 			return projectSpine(entries, reduceSpine(entries), messages);

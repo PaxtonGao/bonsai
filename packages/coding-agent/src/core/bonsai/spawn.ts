@@ -1,5 +1,5 @@
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import type { AssistantMessage } from "@earendil-works/pi-ai";
+import type { AssistantMessage, Model } from "@earendil-works/pi-ai";
 import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import type { AgentSession } from "../agent-session.ts";
@@ -9,8 +9,15 @@ import {
 	createAgentSessionServices,
 } from "../agent-session-services.ts";
 import { defineTool, type ToolDefinition } from "../extensions/types.ts";
-import { loadPromptTemplate } from "../prompt-template.ts";
+import { loadPromptTemplate, loadToolPromptDoc } from "../prompt-template.ts";
 import { SessionManager } from "../session-manager.ts";
+import {
+	type AgentProfile,
+	loadAgentProfile,
+	resolveProfileModels,
+	resolveProfileThinking,
+	resolveProfileTools,
+} from "./agent-profile.ts";
 import { SPAWN_RECEIPT_SCHEMA, type SpawnReceipt, type SpawnResult, type SpawnTask } from "./model.ts";
 import { projectSpine } from "./projection.ts";
 import { reduceSpine } from "./reducer.ts";
@@ -45,9 +52,15 @@ function childSessionManager(runtime: SpawnRuntime): SessionManager {
 		: SessionManager.inMemory(runtime.services.cwd, options);
 }
 
-async function createChild(runtime: SpawnRuntime, prefix: AgentMessage[], systemPrompt: string) {
+async function createChild(
+	runtime: SpawnRuntime,
+	prefix: AgentMessage[],
+	profile: AgentProfile,
+	systemPrompt: string,
+	model: Model<any>,
+) {
 	const parent = runtime.parent;
-	const activeToolNames = parent.getActiveToolNames().filter((name) => name !== "spine_spawn");
+	const activeToolNames = resolveProfileTools(profile, parent.getActiveToolNames());
 	const services = await createAgentSessionServices({
 		cwd: runtime.services.cwd,
 		agentDir: runtime.services.agentDir,
@@ -63,25 +76,31 @@ async function createChild(runtime: SpawnRuntime, prefix: AgentMessage[], system
 		return definition ? [definition] : [];
 	});
 	const sessionManager = childSessionManager(runtime);
-	if (parent.model) sessionManager.appendModelChange(parent.model.provider, parent.model.id);
-	sessionManager.appendThinkingLevelChange(parent.thinkingLevel);
+	const level = resolveProfileThinking(profile, parent.thinkingLevel, model);
+	sessionManager.appendModelChange(model.provider, model.id);
+	sessionManager.appendThinkingLevelChange(level);
 	const { session } = await createAgentSessionFromServices({
 		services,
 		sessionManager,
-		model: parent.model,
-		thinkingLevel: parent.thinkingLevel,
+		model,
+		thinkingLevel: level,
 		tools: activeToolNames,
 		customTools,
 		fixedSystemPrompt: systemPrompt,
 		sessionStartEvent: { type: "session_start", reason: "startup" },
 	});
-	await session.bindExtensions({ mode: "print" });
-	session.agent.state.messages = prefix.slice();
-	session.agent.transformContext = async (messages) => {
-		const entries = sessionManager.getBranch();
-		return [...prefix, ...projectSpine(entries, reduceSpine(entries), messages)];
-	};
-	return session;
+	try {
+		await session.bindExtensions({ mode: "print" });
+		session.agent.state.messages = prefix.slice();
+		session.agent.transformContext = async (messages) => {
+			const entries = sessionManager.getBranch();
+			return [...prefix, ...projectSpine(entries, reduceSpine(entries), messages)];
+		};
+		return session;
+	} catch (error) {
+		session.dispose();
+		throw error;
+	}
 }
 
 function resultFromChild(
@@ -146,12 +165,11 @@ function resultFromChild(
 async function promptChild(
 	child: AgentSession,
 	task: SpawnTask,
-	tasks: SpawnTask[],
 	signal: AbortSignal | undefined,
 	executionDeadlineMs: number,
 ): Promise<"settled" | "timed_out"> {
 	if (signal?.aborted) return "settled";
-	const prompt = child.prompt(taskEnvelope(task, tasks), { expandPromptTemplates: false, source: "extension" });
+	const prompt = child.prompt(task.prompt, { expandPromptTemplates: false, source: "extension" });
 	let abortTimeout: ReturnType<typeof setTimeout> | undefined;
 	let resolveDeadline: () => void = () => {};
 	const abortDeadline = new Promise<void>((resolve) => {
@@ -187,6 +205,18 @@ async function promptChild(
 	}
 }
 
+function childHasOutputOrToolCall(child: AgentSession, inheritedMessageCount: number): boolean {
+	return child.messages
+		.slice(inheritedMessageCount)
+		.some(
+			(message) =>
+				message?.role === "assistant" &&
+				message.content.some(
+					(part) => (part.type === "text" && Boolean(part.text.trim())) || part.type === "toolCall",
+				),
+		);
+}
+
 async function runSpawn(
 	runtime: SpawnRuntime,
 	tasks: SpawnTask[],
@@ -203,41 +233,53 @@ async function runSpawn(
 	};
 	signal?.addEventListener("abort", abortChildren, { once: true });
 	try {
-		const executionDeadlineMs = runtime.childExecutionDeadlineMs ?? CHILD_EXECUTION_DEADLINE_MS;
 		const prefix = runtime.getPreResponseContext();
 		if (prefix.length === 0) throw new Error("spine.spawn has no pre-response context snapshot");
-		const systemPrompt = runtime.parent.systemPrompt;
-		try {
-			for (const _task of tasks) {
-				const child = await createChild(runtime, prefix, systemPrompt);
-				children.push(child);
-				if (parentAborted) await child.abort();
-			}
-		} catch (error) {
-			for (const child of children) child.dispose();
-			throw error;
-		}
-		try {
-			const outcomes = await Promise.allSettled(
-				children.map((child, ordinal) =>
-					promptChild(child, tasks[ordinal] ?? tasks[0]!, tasks, signal, executionDeadlineMs),
-				),
-			);
-			return {
-				schema: SPAWN_RECEIPT_SCHEMA,
-				results: children.map((child, ordinal) =>
-					resultFromChild(
-						child,
-						ordinal,
-						parentAborted,
-						outcomes[ordinal]?.status === "fulfilled" && outcomes[ordinal].value === "timed_out",
-						executionDeadlineMs,
+		const profile = loadAgentProfile("spine-child", "spine-child");
+		const executionDeadlineMs = runtime.childExecutionDeadlineMs ?? profile.deadlineMs ?? CHILD_EXECUTION_DEADLINE_MS;
+		const models = resolveProfileModels(profile, runtime.parent.model, runtime.services.modelRuntime);
+		if (models.length === 0) throw new Error("spine-child profile has no available model");
+		let lastError: unknown;
+		for (let modelIndex = 0; modelIndex < models.length; modelIndex++) {
+			const model = models[modelIndex]!;
+			try {
+				for (const task of tasks) {
+					const child = await createChild(runtime, prefix, profile, taskEnvelope(task, tasks), model);
+					children.push(child);
+					if (parentAborted) await child.abort();
+				}
+				const outcomes = await Promise.allSettled(
+					children.map((child, ordinal) =>
+						promptChild(child, tasks[ordinal] ?? tasks[0]!, signal, executionDeadlineMs),
 					),
-				),
-			};
-		} finally {
-			for (const child of children) child.dispose();
+				);
+				const receipt: SpawnReceipt = {
+					schema: SPAWN_RECEIPT_SCHEMA,
+					results: children.map((child, ordinal) =>
+						resultFromChild(
+							child,
+							ordinal,
+							parentAborted,
+							outcomes[ordinal]?.status === "fulfilled" && outcomes[ordinal].value === "timed_out",
+							executionDeadlineMs,
+						),
+					),
+				};
+				const canRetry =
+					modelIndex + 1 < models.length &&
+					!parentAborted &&
+					receipt.results.every((result) => result.outcome === "errored") &&
+					children.every((child) => !childHasOutputOrToolCall(child, prefix.length));
+				if (!canRetry) return receipt;
+			} catch (error) {
+				lastError = error;
+				if (modelIndex + 1 === models.length) throw error;
+			} finally {
+				for (const child of children) child.dispose();
+				children.length = 0;
+			}
 		}
+		throw lastError instanceof Error ? lastError : new Error("spine-child model candidates exhausted");
 	} finally {
 		signal?.removeEventListener("abort", abortChildren);
 		const remaining = (activeChildCounts.get(runtime.parent) ?? tasks.length) - tasks.length;
@@ -247,31 +289,26 @@ async function runSpawn(
 }
 
 export function createSpineSpawnTool(getRuntime: () => SpawnRuntime | undefined): ToolDefinition {
+	const prompt = loadToolPromptDoc("tools/spine/spawn");
 	return defineTool({
 		name: "spine_spawn",
 		label: "Spawn tasks",
-		description: loadPromptTemplate("tools/spine-spawn-description"),
-		promptSnippet: loadPromptTemplate("tools/spine-spawn"),
+		description: prompt.brief,
+		promptSnippet: prompt.brief,
+		promptGuidelines: [prompt.guidance],
 		parameters: Type.Object(
 			{
 				tasks: Type.Array(
 					Type.Object(
 						{
-							summary: Type.String({
-								minLength: 1,
-								description: loadPromptTemplate("tools/fields/spawn-summary"),
-							}),
-							prompt: Type.String({
-								minLength: 1,
-								description: loadPromptTemplate("tools/fields/spawn-prompt"),
-							}),
+							summary: Type.String({ minLength: 1 }),
+							prompt: Type.String({ minLength: 1 }),
 						},
 						{ additionalProperties: false },
 					),
 					{
 						minItems: 2,
 						maxItems: 4,
-						description: loadPromptTemplate("tools/fields/spawn-tasks"),
 					},
 				),
 			},

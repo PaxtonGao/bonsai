@@ -23,6 +23,9 @@ describe("Bonsai SpineJIT integration", () => {
 		);
 		expect(toolNames.every((name) => /^[a-zA-Z0-9_-]+$/.test(name))).toBe(true);
 		expect(harness.session.getToolDefinition("spine_trim")?.parameters).toMatchObject({ type: "object" });
+		expect(harness.session.systemPrompt).toContain("- spine_open: Open and enter a focused direct child task.");
+		expect(harness.session.systemPrompt).toContain('{"goal":"Inspect reducer behavior"}');
+		expect(harness.session.systemPrompt).toContain("Child sessions cannot call `spine_spawn`");
 	});
 
 	it("projects a closed child to user evidence and node memory before the next provider request", async () => {
