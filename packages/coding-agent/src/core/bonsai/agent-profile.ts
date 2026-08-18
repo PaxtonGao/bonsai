@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { Model } from "@earendil-works/pi-ai";
-import { clampThinkingLevel } from "@earendil-works/pi-ai/compat";
+import { getSupportedThinkingLevels } from "@earendil-works/pi-ai/compat";
 import { getPackageDir } from "../../config.ts";
 import { parseFrontmatter } from "../../utils/frontmatter.ts";
 import type { ModelRuntime } from "../model-runtime.ts";
@@ -34,6 +34,7 @@ const PROFILE_FIELDS = new Set([
 ]);
 const PROFILE_KINDS = new Set<AgentProfileKind>(["main", "spine-child", "delegate"]);
 const THINKING_LEVELS = new Set<AgentThinking>(["inherit", "off", "minimal", "low", "medium", "high", "xhigh", "max"]);
+const ORDERED_THINKING_LEVELS: ThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 const DELEGATION_TOOLS = new Set(["agent", "delegate", "spawn_agent", "subagent", "subagent_status", "task"]);
 
 function requiredString(frontmatter: Record<string, unknown>, field: string): string {
@@ -155,11 +156,16 @@ export function resolveProfileThinking(
 	model: Model<any>,
 ): ThinkingLevel {
 	const requested = profile.thinking === "inherit" ? parentThinking : profile.thinking;
-	const effective = clampThinkingLevel(model, requested) as ThinkingLevel;
-	if (profile.thinking !== "inherit" && effective !== requested) {
-		throw new Error(`Model ${model.provider}/${model.id} does not support thinking level ${requested}`);
+	const ceiling = Math.min(
+		ORDERED_THINKING_LEVELS.indexOf(requested),
+		ORDERED_THINKING_LEVELS.indexOf(parentThinking),
+	);
+	const supported = new Set(getSupportedThinkingLevels(model));
+	for (let index = ceiling; index >= 0; index--) {
+		const level = ORDERED_THINKING_LEVELS[index];
+		if (supported.has(level)) return level;
 	}
-	return effective;
+	return "off";
 }
 
 function isHardDenied(kind: AgentProfileKind, tool: string): boolean {

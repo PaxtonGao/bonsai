@@ -17,6 +17,7 @@
 
 ### Fixed
 
+- Fixed Bonsai child profiles failing when a model does not support the requested thinking level by selecting the highest supported level that does not exceed the parent session.
 - Fixed the Bonsai launcher prepending its ask-user extension before management commands, which prevented update, auth, config, and package subcommands from being recognized.
 - Fixed the subagent example repeatedly prompting before running project-local agents in trusted repositories ([#8261](https://github.com/earendil-works/pi/issues/8261)).
 - Added `session_compact_failed` extension events so compaction failures and aborts expose their reason, retry state, source, and error message to handlers ([#8175](https://github.com/earendil-works/pi/issues/8175)).

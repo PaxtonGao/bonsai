@@ -3,7 +3,7 @@ name: reviewer
 kind: delegate
 description: Independently review code and verification evidence
 model: inherit
-thinking: medium
+thinking: low
 tools: [read, grep, find, ls, bash]
 deadline_ms: 120000
 result_max_bytes: 12000

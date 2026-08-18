@@ -1,5 +1,11 @@
+import { getModel } from "@earendil-works/pi-ai/compat";
 import { describe, expect, it } from "vitest";
-import { loadAgentProfile, parseAgentProfile, resolveProfileTools } from "../../src/core/bonsai/agent-profile.ts";
+import {
+	loadAgentProfile,
+	parseAgentProfile,
+	resolveProfileThinking,
+	resolveProfileTools,
+} from "../../src/core/bonsai/agent-profile.ts";
 
 describe("Bonsai Agent Profiles", () => {
 	it("loads main, SpineSpawn child, and bundled delegate profiles", () => {
@@ -83,5 +89,25 @@ Try an alias.`,
 			"delegate",
 		);
 		expect(() => resolveProfileTools(alias, ["read", "spawn_agent"])).toThrow("hard-denied");
+	});
+
+	it("routes an unsupported child thinking preference without exceeding the parent", () => {
+		const profile = parseAgentProfile(
+			`---
+name: reviewer
+kind: delegate
+description: Review code
+thinking: medium
+tools: [read]
+---
+Review only.`,
+			"reviewer",
+			"delegate",
+		);
+		const model = getModel("deepseek", "deepseek-v4-flash");
+		if (!model) throw new Error("Missing DeepSeek regression model");
+
+		expect(resolveProfileThinking(profile, "medium", model)).toBe("low");
+		expect(resolveProfileThinking(profile, "low", model)).toBe("low");
 	});
 });

@@ -234,8 +234,9 @@ Hard denylist 由代码定义，YAML、prompt、extension 或 parent 不能覆�
 ### 7.2 Thinking
 
 - `inherit` 使用 parent 当前 thinking level。
-- 显式值直接传给 child `AgentSession`。
-- 如果目标模型不支持该 thinking level，调用失败并报告 profile/model 不兼容；不得静默改级别。
+- 显式值是 child 的偏好上限，不得高于 parent 当前 thinking level。
+- 如果目标模型不支持该档位，选择模型支持且不高于该上限的最高档位；例如 DeepSeek Flash 的 `medium` 自动降为 `low`。
+- thinking 降级由 runtime 确定，不要求用户为每个 provider 修改 profile。
 
 ## 8. Delegate Tool 接口
 
@@ -314,7 +315,7 @@ Delegate finished · explorer · completed
 | kind 不匹配 | tool error；不启动 child |
 | 请求未知、越权或 hard-denied tool | tool error；不启动 child |
 | 模型候选全部不可用 | `errored` receipt |
-| Thinking 与模型不兼容 | `errored` receipt |
+| Thinking 档位不受模型支持 | 自动降到模型支持且不高于 parent 的最高档位 |
 | Parent 已 abort | `aborted` receipt；不开始模型调用 |
 | Deadline | abort child；`errored` receipt，diagnostic 标记 timeout |
 | Child 无 final text | `errored` receipt |

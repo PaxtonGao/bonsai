@@ -3,7 +3,7 @@ name: worker
 kind: delegate
 description: Complete a narrow implementation or verification task
 model: inherit
-thinking: medium
+thinking: low
 tools: [read, grep, find, ls, bash, edit, write]
 deadline_ms: 120000
 result_max_bytes: 12000
