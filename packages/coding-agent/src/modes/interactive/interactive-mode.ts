@@ -58,6 +58,13 @@ import {
 } from "../../config.ts";
 import { type AgentSession, type AgentSessionEvent, parseSkillBlock } from "../../core/agent-session.ts";
 import { type AgentSessionRuntime, SessionImportFileNotFoundError } from "../../core/agent-session-runtime.ts";
+import { projectBonsaiExecutionTree } from "../../core/bonsai/execution-tree.ts";
+import {
+	getBonsaiExecutions,
+	openBonsaiChildTranscript,
+	subscribeBonsaiExecutions,
+} from "../../core/bonsai/executions.ts";
+import { reduceSpine } from "../../core/bonsai/reducer.ts";
 import {
 	CACHE_TTL_MS,
 	type CacheMiss,
@@ -115,6 +122,7 @@ import { BashExecutionComponent } from "./components/bash-execution.ts";
 import { BonsaiWelcomeComponent } from "./components/bonsai-welcome.ts";
 import { BorderedLoader } from "./components/bordered-loader.ts";
 import { BranchSummaryMessageComponent } from "./components/branch-summary-message.ts";
+import { ChildTranscriptComponent } from "./components/child-transcript.ts";
 import { CompactionSummaryMessageComponent } from "./components/compaction-summary-message.ts";
 import { CustomEditor } from "./components/custom-editor.ts";
 import { CustomEntryComponent } from "./components/custom-entry.ts";
@@ -122,6 +130,7 @@ import { CustomMessageComponent } from "./components/custom-message.ts";
 import { DaxnutsComponent } from "./components/daxnuts.ts";
 import { DynamicBorder } from "./components/dynamic-border.ts";
 import { EarendilAnnouncementComponent } from "./components/earendil-announcement.ts";
+import { ExecutionTreeSelectorComponent } from "./components/execution-tree-selector.ts";
 import { ExtensionEditorComponent } from "./components/extension-editor.ts";
 import { ExtensionInputComponent } from "./components/extension-input.ts";
 import { ExtensionSelectorComponent } from "./components/extension-selector.ts";
@@ -413,6 +422,9 @@ export class InteractiveMode {
 	private documentContainer: Container;
 	private transcriptScrollView: TuiLayouts.ScrollView | undefined;
 	private fullscreenLayoutRoot: Component | undefined;
+	private fullscreenDock: Component | undefined;
+	private executionTreePanel: ExecutionTreeSelectorComponent | undefined;
+	private executionTreeUnsubscribe: (() => void) | undefined;
 	private pendingMessagesContainer: Container;
 	private statusContainer: Container;
 	private defaultEditor: CustomEditor;
@@ -591,6 +603,12 @@ export class InteractiveMode {
 		this.editor = this.defaultEditor;
 		this.editorContainer = new Container();
 		this.editorContainer.addChild(this.editor as Component);
+		this.editorContainer.handleMouse = (_event) => {
+			const focusTarget = this.editorContainer.children.at(-1);
+			if (!focusTarget?.handleInput) return undefined;
+			this.ui.setFocus(focusTarget);
+			return true;
+		};
 		this.footerDataProvider = new FooterDataProvider(this.sessionManager.getCwd());
 		this.footer = new FooterComponent(this.session, this.footerDataProvider);
 		this.footer.setAutoCompactEnabled(this.session.autoCompactionEnabled);
@@ -900,10 +918,8 @@ export class InteractiveMode {
 			{ component: this.widgetContainerBelow, shrink: 1, minSize: 0 },
 			{ component: this.footerContainer, shrink: 1, minSize: 1 },
 		]);
-		this.fullscreenLayoutRoot = new TuiLayouts.VStack([
-			{ component: this.transcriptScrollView, basis: 0, grow: 1, shrink: 1, minSize: 1 },
-			{ component: dock, basis: "auto", grow: 0, shrink: 1, minSize: 1 },
-		]);
+		this.fullscreenDock = dock;
+		this.rebuildFullscreenLayout();
 		this.mountInteractiveTui(this.renderer, [
 			this.documentContainer,
 			this.pendingMessagesContainer,
@@ -2985,6 +3001,11 @@ export class InteractiveMode {
 				this.editor.setText("");
 				return;
 			}
+			if (text === "/treeview") {
+				this.showExecutionTree();
+				this.editor.setText("");
+				return;
+			}
 			if (text === "/trust") {
 				this.showTrustSelector();
 				this.editor.setText("");
@@ -4405,6 +4426,7 @@ export class InteractiveMode {
 	 */
 	private showSelector(
 		create: (done: () => void) => { component: Component; focus: Component; dispose?: () => void },
+		restoreFocus: () => Component = () => this.editor,
 	): void {
 		const token = {};
 		let dispose: (() => void) | undefined;
@@ -4415,7 +4437,7 @@ export class InteractiveMode {
 			this.activeSelectorDispose = undefined;
 			this.editorContainer.clear();
 			this.editorContainer.addChild(this.editor);
-			this.ui.setFocus(this.editor);
+			this.ui.setFocus(restoreFocus());
 		};
 		const created = create(done);
 		dispose = created.dispose;
@@ -5142,6 +5164,108 @@ export class InteractiveMode {
 			};
 			return { component: selector, focus: selector };
 		});
+	}
+
+	private showExecutionTree(): void {
+		if (this.renderer.mode !== "fullscreen" && !this.switchTuiMode("fullscreen")) {
+			this.showError("Close the active overlay before opening /treeview");
+			return;
+		}
+		if (this.executionTreePanel) this.hideExecutionTreePanel();
+		else this.showExecutionTreePanel();
+	}
+
+	private rebuildFullscreenLayout(): void {
+		if (!this.transcriptScrollView || !this.fullscreenDock) return;
+		const content = this.executionTreePanel
+			? new TuiLayouts.HStack([
+					{ component: this.transcriptScrollView, basis: 0, grow: 3, shrink: 1, minSize: 30 },
+					{ component: this.executionTreePanel, basis: 0, grow: 2, shrink: 1, minSize: 30 },
+				])
+			: this.transcriptScrollView;
+		this.fullscreenLayoutRoot = new TuiLayouts.VStack([
+			{ component: content, basis: 0, grow: 1, shrink: 1, minSize: 1 },
+			{ component: this.fullscreenDock, basis: "auto", grow: 0, shrink: 1, minSize: 1 },
+		]);
+		if (this.renderer.mode === "fullscreen") this.renderer.setLayoutRoot(this.fullscreenLayoutRoot);
+	}
+
+	private showExecutionTreePanel(): void {
+		const close = () => this.hideExecutionTreePanel();
+		const selector = new ExecutionTreeSelectorComponent(
+			projectBonsaiExecutionTree(this.sessionManager.getBranch(), getBonsaiExecutions(this.session)),
+			this.ui,
+			Math.max(5, this.ui.terminal.rows - 10),
+			(node) => {
+				if (node.kind === "execution" && node.executionRef) this.showChildTranscript(node.executionRef);
+				else if (node.nodeId) this.showSpineNodeTranscript(node.nodeId);
+			},
+			close,
+		);
+		this.executionTreePanel = selector;
+		this.executionTreeUnsubscribe = subscribeBonsaiExecutions(this.session, () => {
+			selector.setRoot(
+				projectBonsaiExecutionTree(this.sessionManager.getBranch(), getBonsaiExecutions(this.session)),
+			);
+			this.ui.requestRender();
+		});
+		this.rebuildFullscreenLayout();
+		this.ui.setFocus(selector);
+		this.ui.requestRender();
+	}
+
+	private hideExecutionTreePanel(): void {
+		this.executionTreeUnsubscribe?.();
+		this.executionTreeUnsubscribe = undefined;
+		this.executionTreePanel?.dispose();
+		this.executionTreePanel = undefined;
+		this.rebuildFullscreenLayout();
+		this.ui.setFocus(this.editor);
+		this.ui.requestRender();
+	}
+
+	private showChildTranscript(executionRef: string): void {
+		const child = openBonsaiChildTranscript(this.sessionManager, executionRef);
+		if (!child) {
+			this.showError(`Child transcript unavailable: ${executionRef}`);
+			return;
+		}
+		this.showSelector(
+			(done) => {
+				const component = new ChildTranscriptComponent(
+					child.getSessionFile() ?? executionRef,
+					child.getBranch(),
+					done,
+				);
+				return { component, focus: component };
+			},
+			() => this.executionTreePanel ?? this.editor,
+		);
+	}
+
+	private showSpineNodeTranscript(nodeId: number[]): void {
+		const branch = this.sessionManager.getBranch();
+		const node = reduceSpine(branch).nodes.find(
+			(candidate) =>
+				candidate.id.length === nodeId.length && candidate.id.every((part, index) => part === nodeId[index]),
+		);
+		if (!node) {
+			this.showError(`Spine node unavailable: ${nodeId.join(".")}`);
+			return;
+		}
+		const entries = branch.slice(node.start, (node.end ?? branch.length - 1) + 1);
+		this.showSelector(
+			(done) => {
+				const component = new ChildTranscriptComponent(
+					`${node.status} · entries ${node.start}-${node.end ?? "live"}`,
+					entries,
+					done,
+					`Spine ${nodeId.join(".")}: ${node.goal}`,
+				);
+				return { component, focus: component };
+			},
+			() => this.executionTreePanel ?? this.editor,
+		);
 	}
 
 	private showSessionSelector(): void {

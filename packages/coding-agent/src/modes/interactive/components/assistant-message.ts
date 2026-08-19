@@ -1,5 +1,13 @@
 import type { AssistantMessage } from "@earendil-works/pi-ai";
-import { Container, Markdown, type MarkdownTheme, Spacer, Text } from "@earendil-works/pi-tui";
+import {
+	type Component,
+	type ComponentMouseEvent,
+	Container,
+	Markdown,
+	type MarkdownTheme,
+	Spacer,
+	Text,
+} from "@earendil-works/pi-tui";
 import type { MarkdownTransformer } from "../../../core/extensions/types.ts";
 import { getMarkdownTheme, theme } from "../theme/theme.ts";
 import { createMarkdownTransform } from "./markdown-transform.ts";
@@ -21,6 +29,9 @@ export class AssistantMessageComponent extends Container {
 	private lastMessage?: AssistantMessage;
 	private hasToolCalls = false;
 	private isStreaming = false;
+	private readonly expandedThinkingRuns = new Set<number>();
+	private readonly thinkingComponents = new Map<Component, number>();
+	private thinkingRows: Array<{ start: number; end: number; runStart: number }> = [];
 
 	constructor(
 		message?: AssistantMessage,
@@ -77,6 +88,14 @@ export class AssistantMessageComponent extends Container {
 
 	override render(width: number): string[] {
 		const lines = super.render(width);
+		let row = 0;
+		this.thinkingRows = [];
+		for (const child of this.contentContainer.children) {
+			const height = child.render(width).length;
+			const runStart = this.thinkingComponents.get(child);
+			if (runStart !== undefined) this.thinkingRows.push({ start: row, end: row + height, runStart });
+			row += height;
+		}
 		if (this.hasToolCalls || lines.length === 0) {
 			return lines;
 		}
@@ -86,12 +105,25 @@ export class AssistantMessageComponent extends Container {
 		return lines;
 	}
 
+	handleMouse(event: ComponentMouseEvent): boolean | undefined {
+		if (this.hideThinkingBlock) return undefined;
+		const row = this.thinkingRows.find(
+			(candidate) => event.localY >= candidate.start && event.localY < candidate.end,
+		);
+		if (!row) return undefined;
+		this.toggleThinkingRun(row.runStart);
+		return true;
+	}
+
 	updateContent(message: AssistantMessage, isStreaming = this.isStreaming): void {
+		const stoppedStreaming = this.isStreaming && !isStreaming;
 		this.lastMessage = message;
 		this.isStreaming = isStreaming;
+		if (stoppedStreaming) this.expandedThinkingRuns.clear();
 
 		// Clear content container
 		this.contentContainer.clear();
+		this.thinkingComponents.clear();
 
 		const hasVisibleContent = message.content.some(
 			(c) => (c.type === "text" && c.text.trim()) || (c.type === "thinking" && c.thinking.trim()),
@@ -113,6 +145,7 @@ export class AssistantMessageComponent extends Container {
 					}),
 				);
 			} else if (content.type === "thinking") {
+				const runStart = i;
 				const thinkingBlocks: string[] = [];
 				for (; i < message.content.length; i++) {
 					const thinkingContent = message.content[i];
@@ -136,14 +169,27 @@ export class AssistantMessageComponent extends Container {
 					.slice(i + 1)
 					.some((c) => (c.type === "text" && c.text.trim()) || (c.type === "thinking" && c.thinking.trim()));
 
+				const expanded = this.isStreaming || this.expandedThinkingRuns.has(runStart);
+				let thinkingComponent: Component;
 				if (this.hideThinkingBlock) {
 					// Show one static label for each run of thinking blocks when hidden.
-					this.contentContainer.addChild(
-						new Text(theme.italic(theme.fg("thinkingText", this.hiddenThinkingLabel)), this.outputPad, 0),
+					thinkingComponent = new Text(
+						theme.italic(theme.fg("thinkingText", this.hiddenThinkingLabel)),
+						this.outputPad,
+						0,
+					);
+				} else if (!expanded) {
+					thinkingComponent = new Text(
+						theme.italic(theme.fg("thinkingText", `▶ ${this.hiddenThinkingLabel}`)),
+						this.outputPad,
+						0,
 					);
 				} else {
-					// Render each run of thinking blocks as one Markdown section.
-					this.contentContainer.addChild(
+					const thinkingWrapper = new Container();
+					thinkingWrapper.addChild(
+						new Text(theme.italic(theme.fg("thinkingText", "▼ Thinking")), this.outputPad, 0),
+					);
+					thinkingWrapper.addChild(
 						new Markdown(
 							thinkingBlocks.join("\n\n"),
 							this.outputPad,
@@ -162,7 +208,10 @@ export class AssistantMessageComponent extends Container {
 							},
 						),
 					);
+					thinkingComponent = thinkingWrapper;
 				}
+				this.thinkingComponents.set(thinkingComponent, runStart);
+				this.contentContainer.addChild(thinkingComponent);
 				if (hasVisibleContentAfter) {
 					this.contentContainer.addChild(new Spacer(1));
 				}
@@ -193,5 +242,10 @@ export class AssistantMessageComponent extends Container {
 				this.contentContainer.addChild(new Text(theme.fg("error", `Error: ${errorMsg}`), this.outputPad, 0));
 			}
 		}
+	}
+
+	toggleThinkingRun(runStart: number): void {
+		if (!this.expandedThinkingRuns.delete(runStart)) this.expandedThinkingRuns.add(runStart);
+		if (this.lastMessage) this.updateContent(this.lastMessage);
 	}
 }

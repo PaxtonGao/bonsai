@@ -19,7 +19,9 @@ import {
 	resolveProfileThinking,
 	resolveProfileTools,
 } from "./agent-profile.ts";
+import { createBonsaiChildSessionManager, registerBonsaiExecution } from "./executions.ts";
 import { DELEGATE_RECEIPT_SCHEMA, type DelegateReceipt } from "./model.ts";
+import { reduceSpine } from "./reducer.ts";
 
 export interface DelegateRuntime {
 	parent: AgentSession;
@@ -28,13 +30,6 @@ export interface DelegateRuntime {
 }
 
 const CHILD_TEARDOWN_DEADLINE_MS = 5_000;
-
-function childSessionManager(runtime: DelegateRuntime): SessionManager {
-	const options = runtime.parent.sessionFile ? { parentSession: runtime.parent.sessionFile } : undefined;
-	return runtime.parent.sessionManager.isPersisted()
-		? SessionManager.create(runtime.services.cwd, runtime.parent.sessionManager.getSessionDir(), options)
-		: SessionManager.inMemory(runtime.services.cwd, options);
-}
 
 async function createChild(runtime: DelegateRuntime, profile: AgentProfile, model: Model<any>): Promise<AgentSession> {
 	const parent = runtime.parent;
@@ -56,7 +51,7 @@ async function createChild(runtime: DelegateRuntime, profile: AgentProfile, mode
 			noContextFiles: false,
 		},
 	});
-	const sessionManager = childSessionManager(runtime);
+	const sessionManager = createBonsaiChildSessionManager(runtime.parent.sessionManager, runtime.services.cwd);
 	const level = resolveProfileThinking(profile, parent.thinkingLevel, model);
 	const toolGuidance = Array.from(
 		new Set(
@@ -174,6 +169,8 @@ function receiptFromChild(
 	profile: AgentProfile,
 	child: AgentSession,
 	state: { timedOut: boolean; parentAborted: boolean },
+	durationMs: number,
+	toolCalls: number,
 ): DelegateReceipt {
 	const assistant = lastAssistant(child);
 	const text = child.getLastAssistantText()?.trim() ?? "";
@@ -194,12 +191,26 @@ function receiptFromChild(
 	}
 	if (diagnostic) diagnostic = truncateUtf8(diagnostic, Math.min(profile.resultMaxBytes ?? 12_000, 2_048)).text;
 	const bounded = truncateUtf8(text || diagnostic || "Delegate failed", profile.resultMaxBytes ?? 12_000);
+	const stats = child.getSessionStats();
+	const context = child.getContextUsage();
 	return {
 		schema: DELEGATE_RECEIPT_SCHEMA,
 		profile: profile.name,
 		outcome,
 		memory_body: bounded.text,
 		execution_ref: child.sessionId,
+		duration_ms: durationMs,
+		tool_calls: toolCalls,
+		...(context
+			? { context: { tokens: context.tokens, context_window: context.contextWindow, percent: context.percent } }
+			: {}),
+		usage: {
+			input: stats.tokens.input,
+			output: stats.tokens.output,
+			cache_read: stats.tokens.cacheRead,
+			cache_write: stats.tokens.cacheWrite,
+			total: stats.tokens.total,
+		},
 		...(bounded.truncated ? { truncated: true as const } : {}),
 		...(diagnostic ? { diagnostic } : {}),
 	};
@@ -225,6 +236,7 @@ async function runDelegate(
 	runtime: DelegateRuntime,
 	profile: AgentProfile,
 	task: string,
+	operationId: string,
 	signal: AbortSignal | undefined,
 ): Promise<DelegateReceipt> {
 	const models = resolveProfileModels(profile, runtime.parent.model, runtime.services.modelRuntime);
@@ -240,6 +252,14 @@ async function runDelegate(
 			continue;
 		}
 		let toolCalls = 0;
+		const startedAt = Date.now();
+		const execution = registerBonsaiExecution(runtime.parent, child, {
+			operationId,
+			kind: "delegate",
+			label: task,
+			nodeId: reduceSpine(runtime.parent.sessionManager.getBranch()).cursor,
+			profile: profile.name,
+		});
 		const unsubscribe = child.subscribe((event) => {
 			if (event.type === "tool_execution_start") toolCalls++;
 		});
@@ -251,7 +271,7 @@ async function runDelegate(
 					signal,
 					runtime.childExecutionDeadlineMs ?? profile.deadlineMs ?? 120_000,
 				);
-				lastReceipt = receiptFromChild(profile, child, state);
+				lastReceipt = receiptFromChild(profile, child, state, Date.now() - startedAt, toolCalls);
 			} catch (error) {
 				lastReceipt = {
 					...preflightFailure(runtime, profile, error),
@@ -261,6 +281,7 @@ async function runDelegate(
 			if (lastReceipt.outcome !== "errored" || child.getLastAssistantText()?.trim() || toolCalls > 0)
 				return lastReceipt;
 		} finally {
+			execution.finish(lastReceipt?.outcome ?? "errored");
 			unsubscribe();
 			child.dispose();
 		}
@@ -285,15 +306,22 @@ export function createDelegateTool(getRuntime: () => DelegateRuntime | undefined
 			{ additionalProperties: false },
 		),
 		executionMode: "sequential",
-		execute: async (_toolCallId, params, signal) => {
+		execute: async (toolCallId, params, signal) => {
 			const profileName = params.profile.trim();
 			const task = params.task.trim();
 			if (!profileName || !task) throw new Error("delegate requires non-empty profile and task");
 			const profile = loadAgentProfile(profileName, "delegate");
 			const runtime = getRuntime();
 			if (!runtime) throw new Error("delegate runtime is not bound");
-			const receipt = await runDelegate(runtime, profile, task, signal);
-			return { content: [{ type: "text", text: JSON.stringify(receipt) }], details: receipt };
+			const receipt = await runDelegate(runtime, profile, task, toolCallId, signal);
+			const {
+				duration_ms: _duration,
+				tool_calls: _toolCalls,
+				context: _context,
+				usage: _usage,
+				...modelReceipt
+			} = receipt;
+			return { content: [{ type: "text", text: JSON.stringify(modelReceipt) }], details: receipt };
 		},
 		renderResult: (result, options, theme) => {
 			const receipt = result.details as DelegateReceipt | undefined;
@@ -301,9 +329,21 @@ export function createDelegateTool(getRuntime: () => DelegateRuntime | undefined
 				const content = result.content[0];
 				return new Text(content?.type === "text" ? content.text : "", 0, 0);
 			}
+			const metadata = [
+				receipt.duration_ms !== undefined ? `${(receipt.duration_ms / 1000).toFixed(1)}s` : undefined,
+				receipt.tool_calls !== undefined ? `${receipt.tool_calls} tools` : undefined,
+				receipt.context?.percent !== null && receipt.context?.percent !== undefined
+					? `${receipt.context.percent.toFixed(0)}% ctx`
+					: undefined,
+				receipt.usage && (receipt.usage.cache_read > 0 || receipt.usage.cache_write > 0)
+					? `cache R${receipt.usage.cache_read}/W${receipt.usage.cache_write}`
+					: undefined,
+			]
+				.filter(Boolean)
+				.join(" · ");
 			const heading = theme.fg(
 				receipt.outcome === "completed" ? "success" : receipt.outcome === "aborted" ? "warning" : "error",
-				`Delegate finished · ${receipt.profile} · ${receipt.outcome}${receipt.truncated ? " · truncated" : ""}`,
+				`Delegate finished · ${receipt.profile} · ${receipt.outcome}${metadata ? ` · ${metadata}` : ""}${receipt.truncated ? " · truncated" : ""}`,
 			);
 			const body = options.expanded
 				? receipt.memory_body

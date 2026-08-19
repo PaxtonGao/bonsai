@@ -33,6 +33,9 @@ export interface Component {
 	 */
 	handleInput?(data: string): void;
 
+	/** Optional primary-button click handler for fullscreen overlays. */
+	handleMouse?(event: ComponentMouseEvent): boolean | undefined;
+
 	/**
 	 * If true, component receives key release events (Kitty protocol).
 	 * Default is false - release events are filtered out.
@@ -44,6 +47,15 @@ export interface Component {
 	 * Called when theme changes or when component needs to re-render from scratch.
 	 */
 	invalidate(): void;
+}
+
+export interface ComponentMouseEvent {
+	x: number;
+	y: number;
+	localX: number;
+	localY: number;
+	width: number;
+	button: number;
 }
 
 export type TuiInputListenerResult = { consume?: boolean; data?: string } | undefined;
@@ -232,6 +244,18 @@ export class Container implements Component {
 		}
 	}
 
+	handleMouse(event: ComponentMouseEvent): boolean | undefined {
+		let row = 0;
+		for (const child of this.children) {
+			const height = child.render(event.width).length;
+			if (event.localY >= row && event.localY < row + height) {
+				return child.handleMouse?.({ ...event, localY: event.localY - row });
+			}
+			row += height;
+		}
+		return undefined;
+	}
+
 	render(width: number): string[] {
 		const lines: string[] = [];
 		for (const child of this.children) {
@@ -309,6 +333,7 @@ export interface TUI extends Component {
 	stop(options?: TuiStopOptions): void;
 	renderNow(force?: boolean): void;
 	requestRender(force?: boolean): void;
+	dispatchOverlayMouse(x: number, y: number, button: number): boolean;
 	addInputListener(listener: TuiInputListener): () => void;
 	removeInputListener(listener: TuiInputListener): void;
 	onTerminalColorSchemeChange(listener: (scheme: TerminalColorScheme) => void): () => void;
@@ -1155,6 +1180,35 @@ export abstract class TuiBase extends Container implements TUI {
 		}
 
 		return result;
+	}
+
+	dispatchOverlayMouse(x: number, y: number, button: number): boolean {
+		const visibleEntries = this.overlayStack
+			.filter((entry) => this.isOverlayVisible(entry))
+			.sort((left, right) => right.focusOrder - left.focusOrder);
+		for (const entry of visibleEntries) {
+			const { width, maxHeight } = this.resolveOverlayLayout(
+				entry.options,
+				0,
+				this.terminal.columns,
+				this.terminal.rows,
+			);
+			let height = entry.component.render(width).length;
+			if (maxHeight !== undefined) height = Math.min(height, maxHeight);
+			const position = this.resolveOverlayLayout(entry.options, height, this.terminal.columns, this.terminal.rows);
+			if (x < position.col || x >= position.col + width || y < position.row || y >= position.row + height) continue;
+			return Boolean(
+				entry.component.handleMouse?.({
+					x,
+					y,
+					localX: x - position.col,
+					localY: y - position.row,
+					width,
+					button,
+				}),
+			);
+		}
+		return false;
 	}
 
 	protected applyLineResets(lines: string[]): string[] {

@@ -14,6 +14,7 @@ import {
 	resetCapabilitiesCache,
 	setCapabilities,
 } from "../src/terminal-image.ts";
+import type { Component } from "../src/tui.ts";
 import { TuiAltScreen } from "../src/tui-alt-screen.ts";
 import { VirtualTerminal } from "./virtual-terminal.ts";
 
@@ -175,6 +176,57 @@ describe("TuiAltScreen", () => {
 			terminal.getViewport().map((line) => line.trimEnd()),
 			["a4        b3", "a5        b4", "a6        b5", "a7        b6"],
 		);
+		tui.stop();
+	});
+
+	it("routes a primary click to the ordinary layout component under the pointer", async () => {
+		const terminal = new VirtualTerminal(20, 4);
+		const tui = new TuiAltScreen(terminal);
+		let clicked = false;
+		const target: Component = {
+			render: () => ["click me"],
+			invalidate: () => {},
+			handleMouse: () => {
+				clicked = true;
+				return true;
+			},
+		};
+		tui.setLayoutRoot(new VStack([new Text("header", 0, 0), target]));
+		tui.start();
+		await terminal.waitForRender();
+
+		terminal.sendInput("\x1b[<0;2;2M");
+		await terminal.waitForRender();
+		assert.strictEqual(clicked, true);
+		tui.stop();
+	});
+
+	it("focuses a layout component when its area is clicked", async () => {
+		const terminal = new VirtualTerminal(20, 4);
+		const tui = new TuiAltScreen(terminal);
+		const editor: Component = {
+			render: () => ["editor"],
+			invalidate: () => {},
+			handleInput: () => {},
+		};
+		const tree: Component = {
+			render: () => ["tree"],
+			invalidate: () => {},
+			handleInput: () => {},
+			handleMouse: () => true,
+		};
+		tui.setLayoutRoot(new VStack([tree, editor]));
+		tui.setFocus(editor);
+		tui.start();
+		await terminal.waitForRender();
+
+		terminal.sendInput("\x1b[<0;2;1M");
+		await terminal.waitForRender();
+		assert.strictEqual(tui.getFocusedComponent(), tree);
+
+		terminal.sendInput("\x1b[<0;2;2M");
+		await terminal.waitForRender();
+		assert.strictEqual(tui.getFocusedComponent(), editor);
 		tui.stop();
 	});
 

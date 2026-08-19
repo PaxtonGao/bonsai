@@ -104,6 +104,7 @@ describe("AssistantMessageComponent", () => {
 			"Thinking...",
 			1,
 		);
+		component.toggleThinkingRun(1);
 		const lines = component.render(80).map((line) => stripAnsi(line));
 
 		expect(lines.some((line) => line.includes(" hello"))).toBe(true);
@@ -130,6 +131,7 @@ describe("AssistantMessageComponent", () => {
 				return `${markdown} Done.`;
 			},
 		]);
+		component.toggleThinkingRun(1);
 
 		expect(stripAnsi(component.render(80).join("\n"))).toContain("The result is x². Done.");
 		expect(calls).toEqual(["formula", "suffix"]);
@@ -217,6 +219,7 @@ describe("AssistantMessageComponent", () => {
 				return `${messageType}:${markdown}`;
 			},
 		]);
+		component.toggleThinkingRun(1);
 
 		const rendered = stripAnsi(component.render(80).join("\n"));
 		expect(rendered).toContain("assistant:answer");
@@ -225,6 +228,33 @@ describe("AssistantMessageComponent", () => {
 			{ type: "text", text: "answer" },
 			{ type: "thinking", thinking: "reasoning" },
 		]);
+	});
+
+	test("expands thinking while streaming and collapses it when complete", () => {
+		initTheme("dark");
+		const message = createAssistantMessage([{ type: "thinking", thinking: "working through it" }]);
+		const component = new AssistantMessageComponent();
+
+		component.updateContent(message, true);
+		expect(stripAnsi(component.render(80).join("\n"))).toContain("working through it");
+
+		component.updateContent(message, false);
+		expect(stripAnsi(component.render(80).join("\n"))).not.toContain("working through it");
+		expect(stripAnsi(component.render(80).join("\n"))).toContain("▶ Thinking...");
+
+		component.toggleThinkingRun(0);
+		expect(stripAnsi(component.render(80).join("\n"))).toContain("working through it");
+	});
+
+	test("expands a collapsed thinking run when its row is clicked", () => {
+		initTheme("dark");
+		const component = new AssistantMessageComponent(
+			createAssistantMessage([{ type: "thinking", thinking: "clickable reasoning" }]),
+		);
+		component.render(80);
+
+		expect(component.handleMouse({ x: 1, y: 1, localX: 1, localY: 1, width: 80, button: 0 })).toBe(true);
+		expect(stripAnsi(component.render(80).join("\n"))).toContain("clickable reasoning");
 	});
 
 	test("uses configured output padding for user messages", () => {
