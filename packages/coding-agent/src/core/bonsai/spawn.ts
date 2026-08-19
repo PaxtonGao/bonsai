@@ -10,7 +10,6 @@ import {
 } from "../agent-session-services.ts";
 import { defineTool, type ToolDefinition } from "../extensions/types.ts";
 import { loadPromptTemplate, loadToolPromptDoc } from "../prompt-template.ts";
-import { SessionManager } from "../session-manager.ts";
 import {
 	type AgentProfile,
 	loadAgentProfile,
@@ -18,6 +17,7 @@ import {
 	resolveProfileThinking,
 	resolveProfileTools,
 } from "./agent-profile.ts";
+import { type BonsaiExecutionHandle, createBonsaiChildSessionManager, registerBonsaiExecution } from "./executions.ts";
 import { SPAWN_RECEIPT_SCHEMA, type SpawnReceipt, type SpawnResult, type SpawnTask } from "./model.ts";
 import { projectSpine } from "./projection.ts";
 import { reduceSpine } from "./reducer.ts";
@@ -45,13 +45,6 @@ function taskEnvelope(task: SpawnTask, tasks: SpawnTask[]): string {
 	});
 }
 
-function childSessionManager(runtime: SpawnRuntime): SessionManager {
-	const options = runtime.parent.sessionFile ? { parentSession: runtime.parent.sessionFile } : undefined;
-	return runtime.parent.sessionManager.isPersisted()
-		? SessionManager.create(runtime.services.cwd, runtime.parent.sessionManager.getSessionDir(), options)
-		: SessionManager.inMemory(runtime.services.cwd, options);
-}
-
 async function createChild(
 	runtime: SpawnRuntime,
 	prefix: AgentMessage[],
@@ -75,7 +68,7 @@ async function createChild(
 		const definition = parent.getToolDefinition(name);
 		return definition ? [definition] : [];
 	});
-	const sessionManager = childSessionManager(runtime);
+	const sessionManager = createBonsaiChildSessionManager(runtime.parent.sessionManager, runtime.services.cwd);
 	const level = resolveProfileThinking(profile, parent.thinkingLevel, model);
 	sessionManager.appendModelChange(model.provider, model.id);
 	sessionManager.appendThinkingLevelChange(level);
@@ -220,6 +213,7 @@ function childHasOutputOrToolCall(child: AgentSession, inheritedMessageCount: nu
 async function runSpawn(
 	runtime: SpawnRuntime,
 	tasks: SpawnTask[],
+	operationId: string,
 	signal: AbortSignal | undefined,
 ): Promise<SpawnReceipt> {
 	const active = activeChildCounts.get(runtime.parent) ?? 0;
@@ -242,10 +236,23 @@ async function runSpawn(
 		let lastError: unknown;
 		for (let modelIndex = 0; modelIndex < models.length; modelIndex++) {
 			const model = models[modelIndex]!;
+			const executionHandles: BonsaiExecutionHandle[] = [];
 			try {
-				for (const task of tasks) {
+				const nodeId = reduceSpine(runtime.parent.sessionManager.getBranch()).cursor;
+				for (let ordinal = 0; ordinal < tasks.length; ordinal++) {
+					const task = tasks[ordinal]!;
 					const child = await createChild(runtime, prefix, profile, taskEnvelope(task, tasks), model);
 					children.push(child);
+					executionHandles.push(
+						registerBonsaiExecution(runtime.parent, child, {
+							operationId,
+							kind: "spine_spawn",
+							label: task.summary,
+							nodeId,
+							profile: profile.name,
+							ordinal,
+						}),
+					);
 					if (parentAborted) await child.abort();
 				}
 				const outcomes = await Promise.allSettled(
@@ -265,6 +272,9 @@ async function runSpawn(
 						),
 					),
 				};
+				for (let ordinal = 0; ordinal < receipt.results.length; ordinal++) {
+					executionHandles[ordinal]?.finish(receipt.results[ordinal]!.outcome);
+				}
 				const canRetry =
 					modelIndex + 1 < models.length &&
 					!parentAborted &&
@@ -273,6 +283,7 @@ async function runSpawn(
 				if (!canRetry) return receipt;
 			} catch (error) {
 				lastError = error;
+				for (const handle of executionHandles) handle.finish(parentAborted ? "aborted" : "errored");
 				if (modelIndex + 1 === models.length) throw error;
 			} finally {
 				for (const child of children) child.dispose();
@@ -315,7 +326,7 @@ export function createSpineSpawnTool(getRuntime: () => SpawnRuntime | undefined)
 			{ additionalProperties: false },
 		),
 		executionMode: "sequential",
-		execute: async (_toolCallId, params, signal, _onUpdate, ctx) => {
+		execute: async (toolCallId, params, signal, _onUpdate, ctx) => {
 			admitStructuralControl(ctx.sessionManager, "spine_spawn");
 			const tasks = params.tasks.map((task) => ({ summary: task.summary.trim(), prompt: task.prompt.trim() }));
 			if (tasks.some((task) => !task.summary || !task.prompt))
@@ -325,7 +336,7 @@ export function createSpineSpawnTool(getRuntime: () => SpawnRuntime | undefined)
 			}
 			const runtime = getRuntime();
 			if (!runtime) throw new Error("spine.spawn runtime is not bound");
-			const receipt = await runSpawn(runtime, tasks, signal);
+			const receipt = await runSpawn(runtime, tasks, toolCallId, signal);
 			return { content: [{ type: "text", text: JSON.stringify(receipt) }], details: receipt };
 		},
 		renderResult: (result, _options, theme, context) => {

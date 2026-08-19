@@ -12,6 +12,7 @@ import {
 	getScrollbarGeometry,
 	getScrollViewBox,
 	getScrollViewsAt,
+	type LayoutBox,
 	type LayoutFrame,
 	renderLayoutFrame,
 	type ScrollbarGeometry,
@@ -567,6 +568,15 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 		const mouseEvent = this.parseSgrMouseEvent(data);
 		if (mouseEvent) {
 			if (this.handleRightClickPaste(mouseEvent)) return { consume: true };
+			if (
+				!mouseEvent.release &&
+				(mouseEvent.button & 3) === 0 &&
+				(this.dispatchOverlayMouse(mouseEvent.x, mouseEvent.y, mouseEvent.button) ||
+					this.dispatchLayoutMouse(mouseEvent.x, mouseEvent.y, mouseEvent.button))
+			) {
+				this.requestRender();
+				return { consume: true };
+			}
 			const handled = this.handleScrollbarMouseEvent(mouseEvent);
 			if (!this.scrollbarDrag) this.updateScrollbarHover(mouseEvent.x, mouseEvent.y);
 			if (!handled) this.handleSelectionMouseEvent(mouseEvent);
@@ -640,6 +650,38 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 			return { consume: true };
 		}
 		return undefined;
+	}
+
+	private dispatchLayoutMouse(x: number, y: number, button: number): boolean {
+		const visit = (box: LayoutBox): boolean => {
+			if (
+				x < box.clip.x ||
+				x >= box.clip.x + box.clip.width ||
+				y < box.clip.y ||
+				y >= box.clip.y + box.clip.height
+			) {
+				return false;
+			}
+			for (let index = box.children.length - 1; index >= 0; index--) {
+				if (visit(box.children[index]!)) return true;
+			}
+			const handled = Boolean(
+				box.component.handleMouse?.({
+					x,
+					y,
+					localX: x - box.rect.x,
+					localY: y - box.rect.y,
+					width: box.rect.width,
+					button,
+				}),
+			);
+			if (handled || box.component.handleInput) {
+				if (box.component.handleInput) this.setFocus(box.component);
+				return true;
+			}
+			return false;
+		};
+		return this.currentLayout ? visit(this.currentLayout.root) : false;
 	}
 
 	private parseWheelEvent(data: string): WheelEvent | undefined {

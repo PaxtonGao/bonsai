@@ -30,6 +30,10 @@ export interface DelegateReceipt {
 	outcome: DelegateOutcome;
 	memory_body: string;
 	execution_ref: string;
+	duration_ms?: number;
+	tool_calls?: number;
+	context?: { tokens: number | null; context_window: number; percent: number | null };
+	usage?: { input: number; output: number; cache_read: number; cache_write: number; total: number };
 	truncated?: true;
 	diagnostic?: string;
 }

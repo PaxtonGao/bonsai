@@ -5,11 +5,13 @@ import {
 	Container,
 	getCapabilities,
 	Image,
+	Shimmer,
 	Spacer,
 	Text,
 	type TUI,
 	truncateToWidth,
 } from "@earendil-works/pi-tui";
+import chalk from "chalk";
 import type { ToolDefinition, ToolRenderContext } from "../../../core/extensions/types.ts";
 import { createAllToolDefinitions, type ToolName } from "../../../core/tools/index.ts";
 import { getTextOutput as getRenderedTextOutput, shortenPath } from "../../../core/tools/render-utils.ts";
@@ -119,7 +121,7 @@ export class ToolExecutionComponent extends Container {
 	private contentBox: Box;
 	private contentText: Text;
 	private summaryBox: Box;
-	private summaryText: Text;
+	private summaryText: Shimmer;
 	private selfRenderContainer: Container;
 	private callRendererComponent?: Component;
 	private resultRendererComponent?: Component;
@@ -175,7 +177,21 @@ export class ToolExecutionComponent extends Container {
 		this.contentBox = new Box(1, 1, (text: string) => theme.bg("toolPendingBg", text));
 		this.contentText = new Text("", 1, 1, (text: string) => theme.bg("toolPendingBg", text));
 		this.summaryBox = new Box(1, 0, (text: string) => theme.bg("toolPendingBg", text));
-		this.summaryText = new Text("", 0, 0);
+		this.summaryText = new Shimmer(this.ui, "", {
+			dim: (text) => theme.fg("muted", theme.bold(text)),
+			base: (text) => theme.fg("toolTitle", theme.bold(text)),
+			bright: (text) => chalk.hex("#b0f04a")(theme.bold(text)),
+			// Bonsai-green wave gradient; hardcoded hex until theme tokens are needed.
+			trail: [
+				(text) => chalk.hex("#58d68d")(text),
+				(text) => chalk.hex("#7ee06b")(text),
+				(text) => chalk.hex("#a5e04e")(text),
+				(text) => chalk.hex("#3ecf8e")(text),
+				(text) => chalk.hex("#a8d8b0")(text),
+			],
+			intervalMs: 110,
+		});
+		this.summaryText.setActive(true);
 		this.summaryBox.addChild(this.summaryText);
 		this.selfRenderContainer = new Container();
 
@@ -289,6 +305,7 @@ export class ToolExecutionComponent extends Container {
 	): void {
 		this.result = result;
 		this.isPartial = isPartial;
+		this.summaryText.setActive(isPartial);
 		this.updateDisplay();
 		this.maybeConvertImagesForKitty();
 	}
@@ -331,6 +348,10 @@ export class ToolExecutionComponent extends Container {
 		this.updateDisplay();
 	}
 
+	dispose(): void {
+		this.summaryText.dispose();
+	}
+
 	override invalidate(): void {
 		super.invalidate();
 		this.updateDisplay();
@@ -354,9 +375,7 @@ export class ToolExecutionComponent extends Container {
 					summary = `❌ ${summary}${error ? ` — ${error}` : ""}`;
 				}
 				this.summaryBox.setBgFn(bgFn);
-				this.summaryText.setText(
-					theme.fg("toolTitle", theme.bold(truncateToWidth(summary, Math.max(1, width - 2), "..."))),
-				);
+				this.summaryText.setText(truncateToWidth(summary, Math.max(1, width - 2), "..."));
 				return ["", ...this.summaryBox.render(width)];
 			}
 		}

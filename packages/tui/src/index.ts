@@ -32,6 +32,7 @@ export {
 	type SelectListTruncatePrimaryContext,
 } from "./components/select-list.ts";
 export { type SettingItem, SettingsList, type SettingsListTheme } from "./components/settings-list.ts";
+export { Shimmer, type ShimmerStyles } from "./components/shimmer.ts";
 export { Spacer } from "./components/spacer.ts";
 export { Text } from "./components/text.ts";
 export { TruncatedText } from "./components/truncated-text.ts";
@@ -115,6 +116,7 @@ export {
 } from "./terminal-image.ts";
 export {
 	type Component,
+	type ComponentMouseEvent,
 	Container,
 	CURSOR_MARKER,
 	compositeTuiLine,
