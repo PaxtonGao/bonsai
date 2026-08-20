@@ -1,3 +1,4 @@
+import type { AssistantMessage, ToolResultMessage } from "@earendil-works/pi-ai";
 import { describe, expect, it } from "vitest";
 import {
 	type BranchSummaryEntry,
@@ -36,6 +37,44 @@ function msg(id: string, parentId: string | null, role: "user" | "assistant", te
 			timestamp: 1,
 		},
 	};
+}
+
+function assistantWithToolCalls(
+	id: string,
+	parentId: string | null,
+	toolCalls: Array<{ id: string; name: string }>,
+	stopReason: AssistantMessage["stopReason"] = "toolUse",
+): SessionMessageEntry {
+	const entry = msg(id, parentId, "assistant", "partial explanation");
+	const message = entry.message as AssistantMessage;
+	return {
+		...entry,
+		message: {
+			...message,
+			content: [
+				...message.content,
+				...toolCalls.map((toolCall) => ({
+					type: "toolCall" as const,
+					id: toolCall.id,
+					name: toolCall.name,
+					arguments: {},
+				})),
+			],
+			stopReason,
+		},
+	};
+}
+
+function toolResult(id: string, parentId: string | null, toolCallId: string, toolName: string): SessionMessageEntry {
+	const message: ToolResultMessage = {
+		role: "toolResult",
+		toolCallId,
+		toolName,
+		content: [{ type: "text", text: "done" }],
+		isError: false,
+		timestamp: 1,
+	};
+	return { type: "message", id, parentId, timestamp: "2025-01-01T00:00:00Z", message };
 }
 
 function compaction(id: string, parentId: string | null, summary: string, firstKeptEntryId: string): CompactionEntry {
@@ -286,6 +325,48 @@ describe("buildSessionContext", () => {
 	});
 
 	describe("edge cases", () => {
+		it("removes tool calls missing results from a partially persisted batch", () => {
+			const entries: SessionEntry[] = [
+				assistantWithToolCalls("1", null, [
+					{ id: "call-1", name: "read" },
+					{ id: "call-2", name: "read" },
+				]),
+				toolResult("2", "1", "call-1", "read"),
+			];
+
+			const ctx = buildSessionContext(entries);
+			expect(ctx.messages.map((message) => message.role)).toEqual(["assistant", "toolResult"]);
+			const assistant = ctx.messages[0] as AssistantMessage;
+			expect(assistant.content.filter((part) => part.type === "toolCall").map((part) => part.id)).toEqual([
+				"call-1",
+			]);
+		});
+
+		it("keeps aborted assistant text while removing a dangling tool call", () => {
+			const entries: SessionEntry[] = [
+				assistantWithToolCalls("1", null, [{ id: "call-1", name: "read" }], "aborted"),
+				msg("2", "1", "user", "continue"),
+			];
+
+			const ctx = buildSessionContext(entries);
+			expect(ctx.messages.map((message) => message.role)).toEqual(["assistant", "user"]);
+			const assistant = ctx.messages[0] as AssistantMessage;
+			expect(assistant.content).toEqual([{ type: "text", text: "partial explanation" }]);
+		});
+
+		it("removes mismatched tool results", () => {
+			const entries: SessionEntry[] = [
+				assistantWithToolCalls("1", null, [{ id: "call-1", name: "read" }]),
+				toolResult("2", "1", "call-1", "write"),
+				msg("3", "2", "user", "continue"),
+			];
+
+			const ctx = buildSessionContext(entries);
+			expect(ctx.messages.map((message) => message.role)).toEqual(["assistant", "user"]);
+			const assistant = ctx.messages[0] as AssistantMessage;
+			expect(assistant.content).toEqual([{ type: "text", text: "partial explanation" }]);
+		});
+
 		it("uses last entry when leafId not found", () => {
 			const entries: SessionEntry[] = [msg("1", null, "user", "hello"), msg("2", "1", "assistant", "hi")];
 			const ctx = buildSessionContext(entries, "nonexistent");
