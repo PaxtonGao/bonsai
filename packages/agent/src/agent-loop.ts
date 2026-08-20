@@ -354,7 +354,7 @@ async function streamAssistantResponse(
 
 			case "done":
 			case "error": {
-				const finalMessage = await response.result();
+				const finalMessage = removeUnexecutedToolCalls(await response.result());
 				if (addedPartial) {
 					context.messages[context.messages.length - 1] = finalMessage;
 				} else {
@@ -369,7 +369,7 @@ async function streamAssistantResponse(
 		}
 	}
 
-	const finalMessage = await response.result();
+	const finalMessage = removeUnexecutedToolCalls(await response.result());
 	if (addedPartial) {
 		context.messages[context.messages.length - 1] = finalMessage;
 	} else {
@@ -378,6 +378,12 @@ async function streamAssistantResponse(
 	}
 	await emit({ type: "message_end", message: finalMessage });
 	return finalMessage;
+}
+
+function removeUnexecutedToolCalls(message: AssistantMessage): AssistantMessage {
+	if (message.stopReason !== "aborted" && message.stopReason !== "error") return message;
+	const content = message.content.filter((part) => part.type !== "toolCall");
+	return content.length === message.content.length ? message : { ...message, content };
 }
 
 /**
@@ -483,10 +489,6 @@ async function executeToolCallsSequential(
 		await emitToolResultMessage(toolResultMessage, emit);
 		finalizedCalls.push(finalized);
 		messages.push(toolResultMessage);
-
-		if (signal?.aborted) {
-			break;
-		}
 	}
 
 	return {
@@ -522,9 +524,6 @@ async function executeToolCallsParallel(
 			} satisfies FinalizedToolCallOutcome;
 			await emitToolExecutionEnd(finalized, emit);
 			finalizedCalls.push(finalized);
-			if (signal?.aborted) {
-				break;
-			}
 			continue;
 		}
 
@@ -541,9 +540,6 @@ async function executeToolCallsParallel(
 			await emitToolExecutionEnd(finalized, emit);
 			return finalized;
 		});
-		if (signal?.aborted) {
-			break;
-		}
 	}
 
 	const orderedFinalizedCalls = await Promise.all(
@@ -613,6 +609,13 @@ async function prepareToolCall(
 	config: AgentLoopConfig,
 	signal: AbortSignal | undefined,
 ): Promise<PreparedToolCall | ImmediateToolCallOutcome> {
+	if (signal?.aborted) {
+		return {
+			kind: "immediate",
+			result: createErrorToolResult("Operation aborted"),
+			isError: true,
+		};
+	}
 	const tool = currentContext.tools?.find((t) => t.name === toolCall.name);
 	if (!tool) {
 		return {

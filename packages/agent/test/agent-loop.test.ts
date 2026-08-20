@@ -116,6 +116,99 @@ describe("default stream function compatibility", () => {
 });
 
 describe("agentLoop with AgentMessage", () => {
+	it("removes unexecuted tool calls from an aborted streamed response", async () => {
+		const context: AgentContext = { systemPrompt: "", messages: [], tools: [] };
+		const config: AgentLoopConfig = { model: createModel(), convertToLlm: identityConverter };
+		const aborted = createAssistantMessage(
+			[
+				{ type: "text", text: "partial explanation" },
+				{ type: "toolCall", id: "read-1", name: "read", arguments: { path: "README.md" } },
+			],
+			"aborted",
+		);
+		aborted.errorMessage = "Operation aborted";
+
+		const stream = agentLoop([createUserMessage("inspect")], context, config, undefined, () => {
+			const response = new MockAssistantStream();
+			queueMicrotask(() => {
+				response.push({ type: "start", partial: createAssistantMessage([], "pending") });
+				response.push({ type: "error", reason: "aborted", error: aborted });
+			});
+			return response;
+		});
+
+		const events: AgentEvent[] = [];
+		for await (const event of stream) events.push(event);
+		const messages = await stream.result();
+		const assistant = messages.find((message) => message.role === "assistant");
+
+		expect(assistant?.role).toBe("assistant");
+		if (assistant?.role === "assistant") {
+			expect(assistant.stopReason).toBe("aborted");
+			expect(assistant.content).toEqual([{ type: "text", text: "partial explanation" }]);
+		}
+		expect(
+			events.flatMap((event) =>
+				event.type === "message_end" && event.message.role === "assistant" ? event.message.content : [],
+			),
+		).not.toContainEqual(expect.objectContaining({ type: "toolCall" }));
+	});
+
+	it.each(["sequential", "parallel"] as const)(
+		"pairs every tool call when a %s batch is aborted during preflight",
+		async (toolExecution) => {
+			const abortController = new AbortController();
+			const toolSchema = Type.Object({ value: Type.String() });
+			const tool: AgentTool<typeof toolSchema, { value: string }> = {
+				name: "echo",
+				label: "Echo",
+				description: "Echo tool",
+				parameters: toolSchema,
+				execute: async (_toolCallId, params) => ({
+					content: [{ type: "text", text: params.value }],
+					details: { value: params.value },
+				}),
+			};
+			const context: AgentContext = { systemPrompt: "", messages: [], tools: [tool] };
+			const config: AgentLoopConfig = {
+				model: createModel(),
+				convertToLlm: identityConverter,
+				toolExecution,
+				beforeToolCall: async () => {
+					abortController.abort();
+					return undefined;
+				},
+				shouldStopAfterTurn: async () => true,
+			};
+			const stream = agentLoop([createUserMessage("echo twice")], context, config, abortController.signal, () => {
+				const response = new MockAssistantStream();
+				queueMicrotask(() => {
+					const message = createAssistantMessage(
+						[
+							{ type: "toolCall", id: "tool-1", name: "echo", arguments: { value: "first" } },
+							{ type: "toolCall", id: "tool-2", name: "echo", arguments: { value: "second" } },
+						],
+						"toolUse",
+					);
+					response.push({ type: "done", reason: "toolUse", message });
+				});
+				return response;
+			});
+
+			for await (const _event of stream) {
+				// consume
+			}
+			const messages = await stream.result();
+			const toolResults = messages.filter((message) => message.role === "toolResult");
+			expect(toolResults.map((message) => message.toolCallId)).toEqual(["tool-1", "tool-2"]);
+			expect(toolResults.every((message) => message.isError)).toBe(true);
+			expect(toolResults.map((message) => message.content)).toEqual([
+				[{ type: "text", text: "Operation aborted" }],
+				[{ type: "text", text: "Operation aborted" }],
+			]);
+		},
+	);
+
 	it("should emit events with AgentMessage types", async () => {
 		const context: AgentContext = {
 			systemPrompt: "You are helpful.",

@@ -453,6 +453,54 @@ export function buildContextEntries(
 	return contextEntries;
 }
 
+function repairToolCallPairing(messages: AgentMessage[]): AgentMessage[] {
+	const repaired: AgentMessage[] = [];
+	for (let index = 0; index < messages.length; ) {
+		const message = messages[index];
+		if (message.role !== "assistant") {
+			if (message.role !== "toolResult") repaired.push(message);
+			index++;
+			continue;
+		}
+
+		const calls = message.content.filter((part) => part.type === "toolCall");
+		if (calls.length === 0) {
+			repaired.push(message);
+			index++;
+			continue;
+		}
+
+		const expectedNames = new Map<string, string>();
+		const duplicateIds = new Set<string>();
+		for (const call of calls) {
+			if (expectedNames.has(call.id)) duplicateIds.add(call.id);
+			expectedNames.set(call.id, call.name);
+		}
+		for (const id of duplicateIds) expectedNames.delete(id);
+
+		const matchedResults: AgentMessage[] = [];
+		const matchedIds = new Set<string>();
+		let next = index + 1;
+		while (next < messages.length && messages[next].role === "toolResult") {
+			const result = messages[next];
+			if (
+				result.role === "toolResult" &&
+				expectedNames.get(result.toolCallId) === result.toolName &&
+				!matchedIds.has(result.toolCallId)
+			) {
+				matchedIds.add(result.toolCallId);
+				matchedResults.push(result);
+			}
+			next++;
+		}
+
+		const content = message.content.filter((part) => part.type !== "toolCall" || matchedIds.has(part.id));
+		repaired.push(content.length === message.content.length ? message : { ...message, content }, ...matchedResults);
+		index = next;
+	}
+	return repaired;
+}
+
 /**
  * Build the session context from entries using tree traversal.
  * If leafId is provided, walks from that entry to root.
@@ -465,7 +513,9 @@ export function buildSessionContext(
 ): SessionContext {
 	const path = buildSessionPath(entries, leafId, byId);
 	const { thinkingLevel, model } = getSessionContextSettings(path);
-	const messages = buildContextEntries(entries, leafId, byId).flatMap(sessionEntryToContextMessages);
+	const messages = repairToolCallPairing(
+		buildContextEntries(entries, leafId, byId).flatMap(sessionEntryToContextMessages),
+	);
 	return { messages, thinkingLevel, model };
 }
 
